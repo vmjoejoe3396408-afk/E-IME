@@ -36,6 +36,7 @@ public:
     // 移動至游標座標下方 (含螢幕邊界防溢出自動翻轉保護)
     void show_at(int screen_x, int screen_y);
     void hide();
+    void show_toast(const std::wstring& message, int screen_x, int screen_y);
     bool is_visible() const;
 
 #ifdef _WIN32
@@ -59,6 +60,8 @@ private:
     size_t current_page_ = 0;
     size_t total_pages_ = 0;
     bool is_simplified_ = false;
+    bool is_toast_ = false;
+    std::wstring toast_msg_;
 
     int width_ = 360;
     int height_ = 110;

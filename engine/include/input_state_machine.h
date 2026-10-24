@@ -107,7 +107,7 @@ public:
     }
 
     bool is_expanded() const { return is_expanded_; }
-    size_t candidates_per_page() const { return is_expanded_ ? 18 : 9; }
+    size_t candidates_per_page() const { return is_expanded_ ? 36 : 9; }
 
     bool is_slot_pinned(size_t slot) const {
         for (const auto& p : pins_) {
@@ -212,19 +212,13 @@ public:
             switch (key) {
                 case SpecialKey::DownArrow: {
                     if (is_expanded_) {
-                        if (selected_in_page_ < 9) {
-                            size_t col_max = std::min(size_t(9), page_cands.size());
-                            if (selected_in_page_ + 1 < col_max) {
-                                selected_in_page_++;
-                            } else {
-                                selected_in_page_ = 0;
-                            }
+                        size_t col = selected_in_page_ / 9;
+                        size_t col_start = col * 9;
+                        size_t col_end = std::min(col_start + 9, page_cands.size());
+                        if (selected_in_page_ + 1 < col_end) {
+                            selected_in_page_++;
                         } else {
-                            if (selected_in_page_ + 1 < page_cands.size()) {
-                                selected_in_page_++;
-                            } else {
-                                selected_in_page_ = 9;
-                            }
+                            selected_in_page_ = col_start;
                         }
                     } else {
                         if (selected_in_page_ + 1 < page_cands.size()) {
@@ -241,19 +235,13 @@ public:
                 }
                 case SpecialKey::UpArrow: {
                     if (is_expanded_) {
-                        if (selected_in_page_ < 9) {
-                            if (selected_in_page_ > 0) {
-                                selected_in_page_--;
-                            } else {
-                                size_t col_max = std::min(size_t(9), page_cands.size());
-                                selected_in_page_ = col_max > 0 ? col_max - 1 : 0;
-                            }
+                        size_t col = selected_in_page_ / 9;
+                        size_t col_start = col * 9;
+                        size_t col_end = std::min(col_start + 9, page_cands.size());
+                        if (selected_in_page_ > col_start) {
+                            selected_in_page_--;
                         } else {
-                            if (selected_in_page_ > 9) {
-                                selected_in_page_--;
-                            } else {
-                                selected_in_page_ = page_cands.empty() ? 9 : page_cands.size() - 1;
-                            }
+                            selected_in_page_ = (col_end > col_start) ? (col_end - 1) : col_start;
                         }
                     } else {
                         if (selected_in_page_ > 0) {
@@ -274,7 +262,7 @@ public:
                         if (candidates_.size() > 9) {
                             is_expanded_ = true;
                             auto exp_cands = current_page_candidates();
-                            size_t target = selected_in_page_ + 9;
+                            size_t target = (selected_in_page_ % 9) + 9;
                             if (target < exp_cands.size()) {
                                 selected_in_page_ = target;
                             } else if (exp_cands.size() > 9) {
@@ -283,12 +271,15 @@ public:
                         }
                         return true;
                     }
-                    // 已展開模式：橫向切換欄位
-                    if (selected_in_page_ < 9) {
-                        size_t target = selected_in_page_ + 9;
+                    // 已展開模式：4 欄橫向切換
+                    size_t cur_col = selected_in_page_ / 9;
+                    size_t row = selected_in_page_ % 9;
+                    if (cur_col < 3) {
+                        size_t next_col = cur_col + 1;
+                        size_t target = next_col * 9 + row;
                         if (target < page_cands.size()) {
                             selected_in_page_ = target;
-                        } else if (page_cands.size() > 9) {
+                        } else if (next_col * 9 < page_cands.size()) {
                             selected_in_page_ = page_cands.size() - 1;
                         } else {
                             size_t total_pages = total_candidate_pages();
@@ -301,7 +292,6 @@ public:
                         size_t total_pages = total_candidate_pages();
                         if (total_pages > 1) {
                             candidate_page_ = (candidate_page_ + 1) % total_pages;
-                            size_t row = selected_in_page_ - 9;
                             auto next_cands = current_page_candidates();
                             selected_in_page_ = std::min(row, next_cands.empty() ? 0 : next_cands.size() - 1);
                         }
@@ -316,23 +306,22 @@ public:
                         }
                         return true;
                     }
-                    // 已展開模式：橫向切換欄位
-                    if (selected_in_page_ >= 9) {
-                        selected_in_page_ -= 9;
+                    // 已展開模式：4 欄橫向切換
+                    size_t cur_col = selected_in_page_ / 9;
+                    size_t row = selected_in_page_ % 9;
+                    if (cur_col > 0) {
+                        size_t prev_col = cur_col - 1;
+                        selected_in_page_ = prev_col * 9 + row;
                     } else {
                         if (candidate_page_ > 0) {
                             candidate_page_--;
                             auto prev_cands = current_page_candidates();
-                            size_t row = selected_in_page_;
-                            if (row + 9 < prev_cands.size()) {
-                                selected_in_page_ = row + 9;
-                            } else if (prev_cands.size() > 9) {
-                                selected_in_page_ = prev_cands.size() - 1;
-                            } else {
-                                selected_in_page_ = std::min(row, prev_cands.empty() ? 0 : prev_cands.size() - 1);
-                            }
+                            size_t last_col = prev_cands.empty() ? 0 : (prev_cands.size() - 1) / 9;
+                            size_t target = last_col * 9 + row;
+                            selected_in_page_ = std::min(target, prev_cands.empty() ? 0 : prev_cands.size() - 1);
                         } else {
                             is_expanded_ = false;
+                            selected_in_page_ = row;
                         }
                     }
                     return true;
@@ -455,7 +444,7 @@ public:
         // 1. 選字清單展開狀態
         if (state_ == EngineState::CandidateOpen) {
             if (c >= '1' && c <= '9') {
-                size_t base = (is_expanded_ && selected_in_page_ >= 9) ? 9 : 0;
+                size_t base = is_expanded_ ? (selected_in_page_ / 9) * 9 : 0;
                 size_t idx = base + static_cast<size_t>(c - '1');
                 if (select_candidate_in_current_page(idx)) {
                     return true;
@@ -480,7 +469,19 @@ public:
             return process_special_key(SpecialKey::Backspace, out_commit_text);
         }
 
-        // 3. 支援在中文組字或空閒時直接打 `[` 與 `]` 輸出「」引號
+        // 3. 支援前導符號鍵 (`) 與直接引號 [`] / [\]
+        if (leader_punct_) {
+            leader_punct_ = false;
+            if (c == '`' || c == '~') return process_literal("`", out_commit_text);
+            auto punct = ZhuyinParser::map_chinese_punctuation(c);
+            if (punct.has_value()) {
+                return process_literal(punct.value(), out_commit_text);
+            }
+        } else if (c == '`') {
+            leader_punct_ = true;
+            return true;
+        }
+
         if (c == '[' || c == ']') {
             auto punct = ZhuyinParser::map_chinese_punctuation(c);
             if (punct.has_value()) {
@@ -695,6 +696,7 @@ private:
     size_t candidate_page_;
     size_t selected_in_page_;
     bool is_expanded_ = false;
+    bool leader_punct_ = false;
 
     void insert_completed_syllable(const Syllable& s) {
         // 若在鎖定區段內部插入音節/符號，移除該鎖定避免索引錯亂

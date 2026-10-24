@@ -736,6 +736,73 @@ bool test_aggressive_correction(eime::ZhuyinTrie& trie, const eime::ViterbiDecod
     return true;
 }
 
+bool test_four_column_and_leader_comma(eime::ZhuyinTrie& trie, const eime::ViterbiDecoder& decoder) {
+    std::cout << "[Test 15] 四欄位選字導航與標點符號/前導鍵輸入測試..." << std::endl;
+    eime::InputStateMachine sm(trie, decoder);
+    std::string out;
+
+    // 1. 測試前導鍵 ` + 逗號/句號/問號
+    sm.process_key('`', out);
+    sm.process_key(',', out);
+    EIME_ASSERT(sm.composition_text() == "，", "前導鍵 ` + , 組字區應呈現全形逗號『，』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "，", "按 Enter 應輸出全形逗號『，』");
+
+    out.clear();
+    sm.process_key('`', out);
+    sm.process_key('.', out);
+    EIME_ASSERT(sm.composition_text() == "。", "前導鍵 ` + . 組字區應呈現全形句號『。』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "。", "按 Enter 應輸出全形句號『。』");
+
+    out.clear();
+    sm.process_key('`', out);
+    sm.process_key('/', out);
+    EIME_ASSERT(sm.composition_text() == "？", "前導鍵 ` + / 組字區應呈現全形問號『？』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "？", "按 Enter 應輸出全形問號『？』");
+
+    // 2. 測試 Ctrl 標點符號快捷鍵
+    out.clear();
+    sm.process_ctrl_punctuation(',', out);
+    EIME_ASSERT(sm.composition_text() == "，", "Ctrl+, 組字區應呈現『，』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "，", "按 Enter 應輸出『，』");
+
+    // 3. 測試 4 欄位展開 (candidates_per_page == 36)
+    sm.reset();
+    out.clear();
+    for (char c : std::string("u ")) sm.process_key(c, out);
+    sm.process_special_key(eime::SpecialKey::DownArrow, out);
+    EIME_ASSERT(sm.state() == eime::EngineState::CandidateOpen, "應進入選字狀態");
+    EIME_ASSERT(!sm.is_expanded(), "未按右方向鍵前應為單欄 (9 個)");
+    EIME_ASSERT(sm.candidates_per_page() == 9, "未展開時每頁 9 個");
+
+    // 按向右方向鍵展開為 4 欄位 (每頁 36 個)
+    sm.process_special_key(eime::SpecialKey::RightArrow, out);
+    EIME_ASSERT(sm.is_expanded(), "按右方向鍵應展開選字表");
+    EIME_ASSERT(sm.candidates_per_page() == 36, "展開後每頁應為 36 個 (4 欄位 x 9 列)");
+    EIME_ASSERT(sm.selected_in_page() >= 9, "按右鍵後游標應切換至第 2 欄 (index >= 9)");
+
+    // 欄位內垂直上下移動 (在第 2 欄 9..17 內循環)
+    size_t cur = sm.selected_in_page();
+    sm.process_special_key(eime::SpecialKey::DownArrow, out);
+    EIME_ASSERT(sm.selected_in_page() >= 9 && sm.selected_in_page() <= 17, "第 2 欄向下移動應維持在第 2 欄");
+    sm.process_special_key(eime::SpecialKey::UpArrow, out);
+    EIME_ASSERT(sm.selected_in_page() == cur, "第 2 欄向上移動應回到原位置");
+
+    // 向左方向鍵切換回第 1 欄
+    sm.process_special_key(eime::SpecialKey::LeftArrow, out);
+    EIME_ASSERT(sm.selected_in_page() < 9, "按左鍵應切換回第 1 欄 (index < 9)");
+
+    // 再次按左方向鍵應收回展開模式
+    sm.process_special_key(eime::SpecialKey::LeftArrow, out);
+    EIME_ASSERT(!sm.is_expanded(), "在第 1 欄按左鍵應收合為單欄選字表");
+
+    std::cout << "  -> [PASS] 四欄位選字導航與標點符號/前導鍵輸入測試通過" << std::endl;
+    return true;
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -770,9 +837,10 @@ int main() {
     ok = ok && test_mid_sentence_punctuation(trie, decoder);
     ok = ok && test_candidate_reselection();
     ok = ok && test_aggressive_correction(trie, decoder);
+    ok = ok && test_four_column_and_leader_comma(trie, decoder);
 
     if (ok) {
-        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 14 個核心測試模組通過。" << std::endl;
+        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 15 個核心測試模組通過。" << std::endl;
         return 0;
     } else {
         std::cerr << "\n[TEST FAILED] 部分測試未通過！" << std::endl;
