@@ -1,14 +1,20 @@
 """
 產生超高速繁簡轉換標頭檔 (engine/include/hanzi_conv.h)
-資料來源：OpenCC 官方 TSCharacters.txt (4,148 條繁簡映射)
+資料來源：OpenCC 官方固定版本 TSCharacters.txt
 """
 
 import urllib.request
 import sys
+import argparse
 from pathlib import Path
 
+UPSTREAM_REVISION = "bcf847cf3fbd79c74779567f9a491ea8ab878183"
+
 def main():
-    url = "https://raw.githubusercontent.com/BYVoid/OpenCC/master/data/dictionary/TSCharacters.txt"
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent.parent / "engine" / "include" / "hanzi_conv.h")
+    args = parser.parse_args()
+    url = f"https://raw.githubusercontent.com/BYVoid/OpenCC/{UPSTREAM_REVISION}/data/dictionary/TSCharacters.txt"
     print(f"正在從 {url} 下載 OpenCC 繁簡對照表...")
     try:
         data = urllib.request.urlopen(url, timeout=15).read().decode("utf-8")
@@ -34,9 +40,15 @@ def main():
     sorted_pairs = sorted(t2s_dict.items(), key=lambda x: ord(x[0]))
     print(f"成功整理 {len(sorted_pairs)} 組繁簡對應字！")
 
-    out_file = Path(__file__).resolve().parent.parent / "engine" / "include" / "hanzi_conv.h"
+    out_file = args.output
+    out_file.parent.mkdir(parents=True, exist_ok=True)
 
-    with open(out_file, "w", encoding="utf-8") as f:
+    with open(out_file, "w", encoding="utf-8", newline="\n") as f:
+        f.write("// Mapping data derived from OpenCC, Apache-2.0.\n")
+        f.write("// Copyright (c) 2010-2023 BYVoid and OpenCC Contributors\n")
+        f.write(f"// Source revision: {UPSTREAM_REVISION}\n")
+        f.write("// Modified by E-IME contributors, 2026-10-24: select first single-character mapping and sort by Unicode.\n")
+        f.write("// E-IME conversion code is MIT licensed. See THIRD_PARTY_NOTICES.md and LICENSES/.\n")
         f.write("#pragma once\n\n")
         f.write("#include <string>\n")
         f.write("#include <string_view>\n")

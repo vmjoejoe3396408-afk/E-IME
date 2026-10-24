@@ -1,3 +1,8 @@
+// Mapping data derived from OpenCC, Apache-2.0.
+// Copyright (c) 2010-2023 BYVoid and OpenCC Contributors
+// Source revision: bcf847cf3fbd79c74779567f9a491ea8ab878183
+// Modified by E-IME contributors, 2026-10-24: select first single-character mapping and sort by Unicode.
+// E-IME conversion code is MIT licensed. See THIRD_PARTY_NOTICES.md and LICENSES/.
 #pragma once
 
 #include <string>

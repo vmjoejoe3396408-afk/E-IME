@@ -1,8 +1,18 @@
 cmake_minimum_required(VERSION 3.20)
-project(EIME VERSION 0.2.0 LANGUAGES CXX)
+project(EIME VERSION 0.4.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+include(CTest)
+
+if (WIN32)
+    add_compile_definitions(NOMINMAX)
+endif()
+if (MSVC)
+    add_compile_options(/utf-8)
+endif()
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}
@@ -70,5 +80,36 @@ if (WIN32)
     if(MINGW)
         target_link_options(eime_tsf_lifecycle PRIVATE -municode)
         target_link_options(eime_tsf_input PRIVATE -municode)
+    endif()
+endif()
+
+# Every invocation gets fresh data, including repeated/parallel CTest runs.
+if (BUILD_TESTING)
+    add_executable(eime_sync_tests tests/sync_journal.cpp)
+    function(eime_add_test name target)
+        set(dll_option "")
+        if (WIN32)
+            set(dll_option "-DTEST_DLL=$<TARGET_FILE:eime_tsf>")
+        endif()
+        set(needs_dll_arg OFF)
+        if (name MATCHES "^tsf_")
+            set(needs_dll_arg ON)
+        endif()
+        add_test(NAME ${name} COMMAND ${CMAKE_COMMAND}
+            "-DTEST_EXE=$<TARGET_FILE:${target}>"
+            "-DTEST_NAME=${name}"
+            "-DTEST_ROOT=${CMAKE_CURRENT_BINARY_DIR}/test-runtime"
+            "-DDICT=${CMAKE_CURRENT_SOURCE_DIR}/data/core_dict.txt"
+            "-DNEEDS_DLL_ARG=${needs_dll_arg}"
+            ${dll_option}
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/run_test.cmake")
+        set_tests_properties(${name} PROPERTIES TIMEOUT 120)
+    endfunction()
+    eime_add_test(sync_journal eime_sync_tests)
+    eime_add_test(core eime_tests)
+    if (WIN32)
+        eime_add_test(stress eime_testbench)
+        eime_add_test(tsf_lifecycle eime_tsf_lifecycle)
+        eime_add_test(tsf_input eime_tsf_input)
     endif()
 endif()

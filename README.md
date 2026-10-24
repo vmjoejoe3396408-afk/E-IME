@@ -6,6 +6,10 @@
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20(x64)-0078D6.svg)](https://microsoft.com/windows)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+目前版本：**0.4.0 預覽版**。原始碼可自行建置；系統整合目前以 Windows x64 為主。MIT 適用於自研程式碼，詞庫及轉換資料的授權見 [第三方聲明](THIRD_PARTY_NOTICES.md)。
+
+私人預覽階段的換機操作請參閱 [另一台裝置測試指南](docs/SECOND_DEVICE_TEST.md)。
+
 ---
 
 ## 1. 專案簡介 (Overview)
@@ -16,13 +20,13 @@
   * **整句組字與局部鎖定**：支援在組字區內按 `←` / `→` 移動游標、按 `↓` 展開候選窗、選字後局部鎖定（Pinned Segments），整句其餘部分自動重新尋求全局最優解。
   * **容錯重組**：盲打時若先按韻母再按聲母（如 `k` (ㄜ) + `2` (ㄉ)），自動重排為標準音節，無字保底輸出原生注音符號。
   * **標點符號與快捷鍵**：支援 `Ctrl+,`（，）、`Ctrl+.`（。）、`Ctrl+'`（、）組字底線與候選展開；單擊 `Shift` 切換中英；`Ctrl+Shift+F` 繁簡即時轉碼輸出。
-* **輕量極速與零外部 Runtime 依賴**：
-  * 核心 DLL 靜態連結標準庫，常駐記憶體約 10MB，單次按鍵解碼延遲微秒級。
-  * 內建詞庫二進位極速快取（`core_dict.txt.bin`），冷啟動載入時間 $< 3\text{ms}$。
+* **輕量化與詞庫快取**：
+  * MinGW 靜態連結標準庫；MSVC 使用靜態 CRT。一般建置直接使用庫內資料，不需下載詞庫。
+  * 內建詞庫二進位快取（`core_dict.txt.bin`）；效能數字依硬體及測試情境而異，歷次量測見 [測試紀錄](testbench/README.md)。
 * **無鎖跨裝置雲端同步**：
-  * 捨棄容易在 OneDrive / Google Drive 發生檔案鎖定衝突的單一資料庫模式，採用 **Per-Device Append-Only Delta 日誌**，寫入僅追加本地設備紀錄，讀取時記憶體原地聯集（CRDT 原則）。
+  * 每個宿主內的輸入法實例使用自己的 `device_<hostname>_<writer-id>.delta`，以各詞累計值的新增量合併，避免同機多實例互相覆寫及壓縮後重算。由外部雲端硬碟負責傳輸檔案；真實跨機雲端傳輸尚未驗證。
 * **無焦點懸浮視窗**：
-  * Win32 輕量視窗套用 `WS_EX_NOACTIVATE` 樣式，搭配 GDI+ 雙緩衝渲染，保證永不搶奪宿主程式焦點。
+  * Win32 輕量視窗套用 `WS_EX_NOACTIVATE` 樣式，搭配 GDI 雙緩衝渲染，避免啟用候選窗時轉移宿主焦點。
 
 ---
 
@@ -33,6 +37,8 @@
 ├── README.md                   # 專案總覽與建置指南
 ├── LICENSE                     # MIT 開源授權協議
 ├── THIRD_PARTY_NOTICES.md      # 第三方詞庫與資料授權聲明 (libchewing, OpenCC)
+├── LICENSES/                  # 完整第三方授權與作者聲明
+├── .github/workflows/ci.yml    # Windows MSVC / MinGW 自動建置與 CTest
 ├── .gitignore                  # Git 排除規則 (排除本機快取與私人日誌)
 ├── engine/                     # 輸入法純邏輯引擎 (Trie / Viterbi / 狀態機)
 │   └── include/                # zhuyin.h, trie.h, viterbi.h, input_state_machine.h
@@ -40,14 +46,14 @@
 │   ├── dllmain.cpp             # COM 伺服器入口點 (DllRegisterServer 等)
 │   ├── text_service.cpp        # ITfTextInputProcessorEx 與按鍵攔截
 │   └── register.cpp            # TSF 語言設定檔與 Category 註冊
-├── ui/                         # Win32 輕量化無焦點候選字視窗 (GDI+)
+├── ui/                         # Win32 輕量化無焦點候選字視窗 (GDI)
 ├── sync/                       # 跨裝置無鎖同步引擎 (SyncJournal)
 ├── data/                       # 核心詞庫與使用者自造詞
 │   ├── core_dict.txt           # 繁體語料庫 (衍生自 libchewing-data)
 │   ├── custom_words.txt        # 使用者自訂詞庫 (純文字擴充)
 │   └── sync/                   # 跨設備增量同步目錄
 ├── scripts/                    # 一鍵安裝、反註冊與熱部署腳本
-├── tests/                      # 13 大核心整合測試套件
+├── tests/                      # 13 個核心模組、同步回歸及 TSF 測試
 └── docs/                       # 技術架構、研發歷程與邊界實作對照文檔
 ```
 
@@ -57,22 +63,34 @@
 
 ### 3.1 前置環境要求
 * **作業系統**：Windows 10 / 11 (64-bit)
-* **編譯器**：支援 C++20 的編譯器（如 MinGW-w64 GCC 13+、Clang 16+ 或 MSVC 2022+）
+* **編譯器**：MinGW-w64 GCC 13+，或 Visual Studio 2022 的「使用 C++ 的桌面開發」工具組
 * **建置工具**：CMake 3.20+ 與 Ninja
+* **腳本環境**：PowerShell 7 (`pwsh`)
+* **選用**：Python 3.10+ 與網路連線，僅供重新產生／核對第三方資料
 
 ### 3.2 編譯步驟
-開啟 PowerShell，執行以下指令：
+開啟 PowerShell 7，確定 MinGW 的 `g++`、CMake 與 Ninja 已在 PATH，執行：
 
 ```powershell
 # 1. 建立建置目錄並配置 Ninja
-cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER=g++
 
 # 2. 執行編譯
 cmake --build build
 
 # 3. 執行全自動單元與整合測試
-.\build\eime_tests.exe
+ctest --test-dir build -C Release --output-on-failure
 ```
+
+MSVC 可使用以下替代步驟（不需要 Ninja）：
+
+```powershell
+cmake -S . -B build-msvc -G "Visual Studio 17 2022" -A x64
+cmake --build build-msvc --config Release
+ctest --test-dir build-msvc -C Release --output-on-failure
+```
+
+CTest 執行核心、同步回歸、壓力、TSF 生命週期及 TSF 輸入共 5 組測試。資料與日誌使用建置目錄內的隔離副本。GitHub Actions 會在 push／pull request 時以 MSVC 和 MinGW 分別建置與測試；第一次上傳後請確認兩個工作都成功。
 
 ### 3.3 註冊與安裝至 Windows
 編譯完成後，以**系統管理員身分**執行安裝腳本：
@@ -82,10 +100,20 @@ pwsh -File .\scripts\install.ps1
 ```
 安裝成功後，即可在 Windows 工作列輸入法清單中選取「**E-IME (改進型注音)**」開始使用。
 
+MSVC 或其他建置位置請指定 DLL：`pwsh -File .\scripts\install.ps1 -SourceDll .\build-msvc\Release\eime_tip.dll`。根目錄的名稱更新 `.cmd` 也會呼叫同一個安裝腳本，依序尋找標準建置輸出或目前註冊版本，並回報失敗。
+
+安裝器會把 DLL 複製至本機版本目錄，詞庫仍指向此專案的 `data/`；安裝後請保留專案目錄。更新前先儲存工作並關閉使用舊版輸入法的應用程式，更新後重新開啟。
+
 如需反註冊並移除：
 ```powershell
 pwsh -File .\scripts\uninstall.ps1
 ```
+
+### 3.4 舊日誌升級與隱私
+
+從舊版升級前，先關閉所有載入舊 DLL 的應用程式（必要時登出再登入），並備份 `data/sync/`。新版可讀取舊 `device_<hostname>.delta`，新紀錄則寫入每個實例自己的檔案；不要讓舊版與新版持續共寫，也不要手動更名或複製日誌。舊版已經遺失的紀錄無法自動復原。
+
+學習日誌包含選過的字詞及時間，請只放在可信任的私人同步資料夾；`.gitignore` 會排除日誌與快取。`data/custom_words.txt` 目前是公開範例，若加入私人詞彙，發布前應還原該檔案。
 
 ---
 
@@ -106,6 +134,8 @@ pwsh -File .\scripts\uninstall.ps1
 * 注音語音規範先韻後聲智慧重組、第 4 個注音早期攔截與無字保底
 * 句中標點符號組字區保留與游標精確定位
 * 單字、整詞與句中選字可反覆改選與明確確認上屏
+
+另有獨立的 [同步回歸測試](tests/sync_journal.cpp)，驗證同機多實例、日誌壓縮、重啟、半行及舊格式紀錄、寫入失敗、計數上限與 800 筆並行學習。最新發布準備驗證見 [2026-10-24 紀錄](docs/RELEASE_READINESS_2026-10-24.md)。自動化 TSF 測試使用 mock 宿主；不代表所有桌面程式或候選窗視覺皆已驗證。
 
 ### 4.2 已知限制
 1. **64 位元應用優先**：目前發布與測試主要針對 Windows 64-bit 原生應用程式，尚未編譯與註冊 32 位元 WoW64 模組。

@@ -1,3 +1,4 @@
+#Requires -Version 7.0
 # E-IME (Enhanced IME) Windows TSF 一鍵反註冊與移除腳本
 
 $ErrorActionPreference = "Stop"

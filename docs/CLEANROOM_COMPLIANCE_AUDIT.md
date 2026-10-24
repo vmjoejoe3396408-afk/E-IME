@@ -31,10 +31,10 @@
 | **注音音節模型** | 內部封閉式狀態轉移矩陣 | 自研 C++20 `Syllable` 結構體與 `ZhuyinParser`，以位元遮罩與槽位管理按鍵 | 教育部公布之國語注音符號規則與標準大千鍵盤佈局 |
 | **整句最佳化解碼** | 專有 HMM / 類神經轉換引擎 | 自研 `ZhuyinTrie` 前綴字典樹 + **支援手動鎖定約束（Pinned Constraints）的動態規劃 Viterbi 演算法** | 經典 Viterbi 動態規劃演算法 |
 | **字詞資料庫** | 閉源二進位 `.lex` 檔與系統註冊表綁定 | 開放純文字 UTF-8 詞庫 (`core_dict.txt`) 與二進位快取序列化器 (`dict_loader.h`) | 衍生自開源 `libchewing-data` 詞庫（LGPL 2.1） |
-| **跨裝置個人學習** | 封閉式漫遊機制或雲端微軟帳號同步 | 自研 **Per-Device Append-Only Delta Journal (`device_<id>.delta`)**，以邏輯時鐘合併統計 | CRDT（無衝突複製資料型態）無鎖聯集原則 |
+| **跨裝置個人學習** | 封閉式漫遊機制或雲端微軟帳號同步 | 自研 **Per-Instance Append-Only Delta Journal (`device_<hostname>_<writer-id>.delta`)**，以每檔各詞累計值合併新增量 | CRDT（無衝突複製資料型態）無鎖聯集原則 |
 | **繁簡漢字轉換** | 系統語言套件轉換 | 自研 `hanzi_conv.h` 極速查表轉碼器 (`Ctrl + Shift + F`) | 衍生自開源 `OpenCC` 繁簡字元對照表（Apache 2.0） |
 | **Windows 系統整合** | 私有未公開 TIP 介面與系統掛鉤 | 依據微軟公開 MSDN 文件實作之標準 COM 介面：`ITfTextInputProcessorEx`、`ITfKeyEventSink`、`ITfDisplayAttributeProvider`、`ITfEditSession` | 微軟官方 MSDN Text Services Framework API |
-| **候選字懸浮窗** | 現代 XAML / DirectComposition 系統元件 | 獨立實作之 Win32 API 輕量化無焦點浮動視窗 (`WS_EX_NOACTIVATE`)，搭配純 GDI+ 高清雙緩衝渲染 | Windows Win32 API 視窗規範 |
+| **候選字懸浮窗** | 現代 XAML / DirectComposition 系統元件 | 獨立實作之 Win32 API 輕量化無焦點浮動視窗 (`WS_EX_NOACTIVATE`)，搭配純 GDI 高清雙緩衝渲染 | Windows Win32 API 視窗規範 |
 
 ---
 
@@ -53,7 +53,7 @@
 
 ## 4. 實測驗證結果 (Test Verification Results)
 
-專案目前內建全自動化單元與整合測試套件（[`tests/test_main.cpp`](tests/test_main.cpp)），最新實測結果（13/13 測試全數通過）：
+專案目前內建全自動化單元與整合測試套件（[`tests/test_main.cpp`](../tests/test_main.cpp)），最新實測結果（13/13 測試全數通過）：
 
 * **[PASS] 測試 1**：大千鍵盤映射與注音音節解析器。
 * **[PASS] 測試 2**：長句游標回頭局部改字與手動鎖定重算（Constrained Viterbi）。

@@ -1,18 +1,24 @@
 """
 E-IME 全面擴充台灣語料庫腳本
-從 libchewing-data 抓取最新開源詞庫 (tsi.csv 與 word.csv)
+從 libchewing-data 固定版本抓取開源詞庫 (tsi.csv 與 word.csv)
 整合現代科技詞彙與破音字完整支援，產出高頻繁體注音詞庫
 """
 
 import urllib.request
 import sys
+import argparse
 from pathlib import Path
 from build_sample_dict import CORE_WORDS
 
-TSI_URL = "https://raw.githubusercontent.com/chewing/libchewing-data/main/dict/chewing/tsi.csv"
-WORD_URL = "https://raw.githubusercontent.com/chewing/libchewing-data/main/dict/chewing/word.csv"
+UPSTREAM_REVISION = "c44e81aef24b06f1509f19e1be54c99812d0c43f"
+BASE_URL = f"https://raw.githubusercontent.com/chewing/libchewing-data/{UPSTREAM_REVISION}/dict/chewing"
+TSI_URL = f"{BASE_URL}/tsi.csv"
+WORD_URL = f"{BASE_URL}/word.csv"
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, default=Path(__file__).resolve().parent.parent / "data" / "core_dict.txt")
+    args = parser.parse_args()
     print("[E-IME] 正在下載官方開源台灣注音語料 (tsi.csv & word.csv)...")
     try:
         tsi_raw = urllib.request.urlopen(TSI_URL, timeout=30).read().decode("utf-8")
@@ -74,9 +80,15 @@ def main():
 
     print(f"自 word.csv 保底補充罕用單字: {word_fallback_count} 條")
 
-    out_file = Path(__file__).resolve().parent.parent / "data" / "core_dict.txt"
-    with open(out_file, "w", encoding="utf-8") as f:
+    out_file = args.output
+    out_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(out_file, "w", encoding="utf-8", newline="\n") as f:
         f.write("# E-IME Full Taiwan Lexicon (Core + Libchewing)\n")
+        f.write("# SPDX-License-Identifier: LGPL-2.1-or-later\n")
+        f.write("# Upstream: Copyright (c) 2025 libchewing Core Team\n")
+        f.write(f"# Source revision: {UPSTREAM_REVISION}\n")
+        f.write("# Modified by E-IME contributors, 2026-10-24: merge core vocabulary, rescale frequencies, TSV conversion.\n")
+        f.write("# License and source details: ../THIRD_PARTY_NOTICES.md\n")
         f.write("# 格式: 詞彙\\t注音(以空白分隔)\\t基礎詞頻\n")
         # 依詞頻高到低排序寫入
         sorted_items = sorted(entries.items(), key=lambda x: x[1], reverse=True)

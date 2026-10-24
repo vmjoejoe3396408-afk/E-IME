@@ -18,8 +18,8 @@
    * 常駐記憶體 $< 10\text{MB}$，核心 DLL $< 4\text{MB}$。
    * 單次擊鍵解碼延遲 $< 50\mu s$（$0.05\text{ms}$），避免現代輸入法常見的掉字與卡頓現象。
 3. **無鎖跨裝置雲端同步 (Zero-Lock Multi-Device Cloud Sync)**：
-   * 採用 **Per-Device Append-Only Delta Journal (`device_<hostname>.delta`)**。
-   * 多台 Windows 電腦指向同一個 OneDrive / Google Drive / Git 資料夾時，各設備僅寫入自己的增量檔，讀取時於記憶體做無衝突聯集（CRDT Counter Merge），避免傳統單一資料庫方案在雲端同步時常見的檔案鎖定與衝突副本問題。
+   * 採用 **Per-Instance Append-Only Delta Journal (`device_<hostname>_<writer-id>.delta`)**。
+   * 多個宿主及裝置指向同一個私人同步資料夾時，各實例只寫自己的增量檔；讀取時比對每檔各詞的累計值，只套用增加部分。檔案傳輸由外部雲端硬碟負責，真實跨機傳輸尚未驗證。不要將含私人學習紀錄的資料夾發布到 Git。
 4. **現代台灣繁體語料庫 + 純文字即時擴充**：
    * 內建現代台灣常用詞、科技詞彙、網路用語，並支援 `custom_words.txt` 純文字自訂詞庫。
 
@@ -57,8 +57,8 @@ graph TD
     subgraph Sync_Layer ["4. 儲存與跨裝置同步層 (E-IME::sync)"]
         SysDict["系統核心詞庫 (core_dict.txt)"]
         UserDict["純文字自訂詞庫 (custom_words.txt)"]
-        DeltaLog["Per-Device 增量日誌 (device_<id>.delta)"]
-        Merger["CRDT 無鎖詞頻合併器"]
+        DeltaLog["Per-Instance 增量日誌"]
+        Merger["累計詞頻增量合併器"]
     end
 
     subgraph UI_Layer ["5. 懸浮渲染層 (E-IME::ui)"]
@@ -93,7 +93,7 @@ graph TD
 | **1. 肌肉記憶恐怖谷** | 微小按鍵行為與 MS-IME 不同（如游標改字後整句跑掉）會導致極度不適。 | 實作 **Constrained Viterbi（受限動態規劃）**：當使用者在長句中段手動選字時，將該區段設為 `PinnedConstraint`，前後未鎖定區段自動重算最佳解，完全復刻微軟新注音核心體驗。 |
 | **2. 宿主 TSF 碎片化** | Word、Chrome、VS Code 回報游標矩形 (`GetTextExt`) 偶發失敗或座標為 `(0,0)`。 | 實作 **三級座標回退機制 (3-Tier Caret Fallback)**：優先取 `ITfContextView::GetTextExt` $\rightarrow$ 次取 Win32 `GetGUIThreadInfo` 游標 $\rightarrow$ 保底吸附於作用中視窗左下角內側。 |
 | **3. 焦點搶奪導致遊戲/編輯器閃退** | 傳統彈出視窗會搶走宿主 `WM_ACTIVATE` 焦點，導致全螢幕遊戲跳出或選單關閉。 | 候選窗嚴格設定 `WS_POPUP \| WS_EX_TOPMOST \| WS_EX_TOOLWINDOW \| WS_EX_NOACTIVATE`，滑鼠點擊或顯示時**絕對不搶奪宿主焦點**。 |
-| **4. 雲端同步檔案鎖定** | 多台電腦同時開啟 OneDrive 同步單一 SQLite 檔案會產生衝突副本或鎖死。 | 廢棄單一 DB，改用 **Per-Device Append-Only Delta (`device_<hostname>.delta`)**。寫入只寫本機專屬檔，讀取時聚合目錄下所有 `.delta`，物理上消除寫入衝突。 |
+| **4. 雲端同步檔案鎖定** | 多台電腦同時開啟 OneDrive 同步單一 SQLite 檔案會產生衝突副本或鎖死。 | 廢棄單一 DB，改用 **Per-Instance Append-Only Delta (`device_<hostname>_<writer-id>.delta`)**。每個宿主實例使用獨立檔案，讀取時比對各詞累計值；保留舊格式讀取，避免多實例共寫及壓縮後重算。 |
 | **5. 系統沙盒與權限隔離** | Windows 11 UWP / Edge 沙盒預設阻擋未宣告類別的輸入法 DLL。 | 在 `register.cpp` 完整註冊 `GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT`、`SECUREMODE`、`UIELEMENTENABLED` 與 `SYSTRAYSUPPORT` 四大現代分類。 |
 
 ---

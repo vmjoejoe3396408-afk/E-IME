@@ -1,4 +1,9 @@
 # E-IME Full Taiwan Lexicon (Core + Libchewing)
+# SPDX-License-Identifier: LGPL-2.1-or-later
+# Upstream: Copyright (c) 2025 libchewing Core Team
+# Source revision: c44e81aef24b06f1509f19e1be54c99812d0c43f
+# Modified by E-IME contributors, 2026-10-24: merge core vocabulary, rescale frequencies, TSV conversion.
+# License and source details: ../THIRD_PARTY_NOTICES.md
 # 格式: 詞彙\t注音(以空白分隔)\t基礎詞頻
 的	ㄉㄜ˙	4000000
 是	ㄕˋ	3300000

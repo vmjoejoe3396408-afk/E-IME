@@ -1,10 +1,24 @@
+#Requires -Version 7.0
 param(
-    [string]$SourceDll = (Join-Path $PSScriptRoot '..\build\eime_tip.dll'),
+    [string]$SourceDll,
     [switch]$UseExistingRegistration
 )
 $ErrorActionPreference = 'Stop'
 $clsid = '{D8E42B10-7A5C-4E91-9B2A-1F3C5D7E9A01}'
 $profile = "Software\Microsoft\CTF\TIP\$clsid\LanguageProfile\0x00000404\{D8E42B11-7A5C-4E91-9B2A-1F3C5D7E9A01}"
+if (-not $SourceDll) {
+    $candidates = @(
+        (Join-Path $PSScriptRoot '..\build\eime_tip.dll'),
+        (Join-Path $PSScriptRoot '..\build\Release\eime_tip.dll'),
+        (Join-Path $PSScriptRoot '..\build_out\eime_tip.dll')
+    )
+    $registeredKey = "HKCU:\Software\Classes\CLSID\$clsid\InprocServer32"
+    if (Test-Path -LiteralPath $registeredKey) {
+        $candidates += (Get-Item -LiteralPath $registeredKey).GetValue('')
+    }
+    $SourceDll = $candidates | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) } | Select-Object -First 1
+    if (-not $SourceDll) { throw 'No E-IME DLL found. Build the project first, or pass -SourceDll <path>.' }
+}
 $SourceDll = (Resolve-Path -LiteralPath $SourceDll).Path
 $hash = (Get-FileHash -LiteralPath $SourceDll -Algorithm SHA256).Hash.ToLowerInvariant()
 # Never register a mutable build output or overwrite a DLL already mapped in hosts.

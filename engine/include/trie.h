@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <algorithm>
 #include <cmath>
+#include <limits>
 
 namespace eime {
 
@@ -78,7 +79,9 @@ public:
 
         for (auto& w : current->words) {
             if (w.text == text) {
-                w.user_boost += delta_count;
+                w.user_boost = static_cast<uint32_t>(std::min<uint64_t>(
+                    static_cast<uint64_t>(w.user_boost) + delta_count,
+                    std::numeric_limits<uint32_t>::max()));
                 update_single_prob(w);
                 std::sort(current->words.begin(), current->words.end());
                 return;

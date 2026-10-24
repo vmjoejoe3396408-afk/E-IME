@@ -5,6 +5,7 @@
 # 1. 建置產物與編譯輸出 (Build Artifacts)
 build/
 build_out/
+/build-*/
 bin/
 out/
 cmake-build-*/
@@ -35,7 +36,13 @@ data-root.txt
 
 # 4. 個人跨裝置學習日誌與設備識別 (Personal Device Delta Logs)
 data/sync/*.delta
+data/sync/*.tmp
 !data/sync/.gitkeep
+
+# Local credentials and private configuration
+.env
+.env.*
+!.env.example
 
 # 5. 測試日誌、測試輸出與本地報表 (Test Records & Outputs)
 testbench/results/
