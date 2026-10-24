@@ -71,17 +71,17 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
     }
 
     font_comp_ = CreateFontW(
-        -20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+        -24, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft JhengHei UI"
     );
     font_cand_ = CreateFontW(
-        -18, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        -24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft JhengHei UI"
     );
     font_num_ = CreateFontW(
-        -14, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        -16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
     );
@@ -140,15 +140,23 @@ void CandidateWindow::recalculate_layout() {
     }
 
     SelectObject(hdc, font_num_);
-    std::wstring tag = is_simplified_ ? L"[簡] 99/99" : L"[繁] 99/99";
+    std::wstring page_tag;
+    if (total_pages_ > 1) {
+        page_tag = std::to_wstring(current_page_ + 1) + L"/" + std::to_wstring(total_pages_);
+    }
     SIZE tag_sz = {0, 0};
-    GetTextExtentPoint32W(hdc, tag.c_str(), static_cast<int>(tag.size()), &tag_sz);
+    if (!page_tag.empty()) {
+        GetTextExtentPoint32W(hdc, page_tag.c_str(), static_cast<int>(page_tag.size()), &tag_sz);
+    }
 
     SelectObject(hdc, old_font);
     ReleaseDC(hwnd_, hdc);
 
-    width_ = std::max({180, candidate_width + 64, static_cast<int>(tag_sz.cx) + 32});
-    height_ = 16 + static_cast<int>(cand_texts_.size()) * 32 + 28;
+    const int item_h = 38;
+    int min_width = 160;
+    width_ = std::max({min_width, candidate_width + 80, static_cast<int>(tag_sz.cx) + 36});
+    int footer_h = (total_pages_ > 1) ? 24 : 8;
+    height_ = 12 + static_cast<int>(cand_texts_.size()) * item_h + footer_h;
 }
 
 void CandidateWindow::show_at(int screen_x, int screen_y) {
@@ -214,19 +222,20 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
     SetBkMode(mem_dc, TRANSPARENT);
 
     // One candidate per row; number keys and arrow navigation keep their ordering.
+    const int item_h = 38;
     const int cur_x = 16;
     for (size_t i = 0; i < cand_texts_.size(); ++i) {
         SelectObject(mem_dc, font_cand_);
-        const int row_y = 8 + static_cast<int>(i) * 32;
+        const int row_y = 6 + static_cast<int>(i) * item_h;
 
         // 高亮選中項目膠囊背景 (微軟現代淺藍 #EBF3FC 與左側微軟藍指示條 #0067C0)
         if (i == selected_idx_) {
-            RECT hi_rc = {6, row_y, w - 6, row_y + 32};
+            RECT hi_rc = {6, row_y, w - 6, row_y + item_h};
             HBRUSH hi_brush = CreateSolidBrush(RGB(235, 243, 252));
             FillRect(mem_dc, &hi_rc, hi_brush);
             DeleteObject(hi_brush);
 
-            RECT ind_rc = {6, row_y + 4, 9, row_y + 28};
+            RECT ind_rc = {6, row_y + 4, 10, row_y + item_h - 4};
             HBRUSH ind_brush = CreateSolidBrush(RGB(0, 103, 192));
             FillRect(mem_dc, &ind_rc, ind_brush);
             DeleteObject(ind_brush);
@@ -236,31 +245,28 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
         SelectObject(mem_dc, font_num_);
         SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 103, 192) : RGB(115, 115, 115));
         wchar_t num_buf[4] = {static_cast<wchar_t>(L'1' + i), L'.', L'\0'};
-        RECT num_rc = {cur_x, row_y, cur_x + 24, row_y + 32};
+        RECT num_rc = {cur_x, row_y, cur_x + 24, row_y + item_h};
         DrawTextW(mem_dc, num_buf, -1, &num_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
         // 候選詞文字 (高對比清楚黑字)
         SelectObject(mem_dc, font_cand_);
         SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 0, 0) : RGB(32, 32, 32));
-        RECT txt_rc = {cur_x + 28, row_y, w - 14, row_y + 32};
+        RECT txt_rc = {cur_x + 28, row_y, w - 14, row_y + item_h};
         DrawTextW(mem_dc, cand_texts_[i].c_str(), static_cast<int>(cand_texts_[i].size()), &txt_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     }
 
-    // Footer with character set and page number.
-    std::wstring status_tag = is_simplified_ ? L"[簡]" : L"[繁]";
-    std::wstringstream pss;
+    // 只有在多於 1 頁時才顯示頁碼（例如 1/2），不顯示 [繁] 或 [簡]
     if (total_pages_ > 1) {
-        pss << status_tag << L" " << (current_page_ + 1) << L"/" << total_pages_;
-    } else {
-        pss << status_tag;
-    }
-    std::wstring page_str = pss.str();
+        std::wstringstream pss;
+        pss << (current_page_ + 1) << L"/" << total_pages_;
+        std::wstring page_str = pss.str();
 
-    SelectObject(mem_dc, font_num_);
-    SetTextColor(mem_dc, is_simplified_ ? RGB(180, 83, 9) : RGB(130, 130, 130));
-    RECT page_rc = {14, h - 30, w - 14, h - 4};
-    DrawTextW(mem_dc, page_str.c_str(), static_cast<int>(page_str.size()), &page_rc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        SelectObject(mem_dc, font_num_);
+        SetTextColor(mem_dc, RGB(130, 130, 130));
+        RECT page_rc = {14, h - 22, w - 14, h - 4};
+        DrawTextW(mem_dc, page_str.c_str(), static_cast<int>(page_str.size()), &page_rc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+    }
 
     BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
 
