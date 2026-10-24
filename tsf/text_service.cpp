@@ -314,6 +314,12 @@ bool EimeTextService::would_eat_key(const KeyInput& input) const {
             wParam == VK_END || wParam == VK_PRIOR || wParam == VK_NEXT || wParam == VK_SPACE) {
             return true;
         }
+        // 組字狀態下攔截可列印字元或符號（如 =、+、~ 等），絕不外洩到組字區外
+        if (!input.text.empty() || wParam == VK_OEM_PLUS || wParam == VK_OEM_MINUS ||
+            wParam == VK_OEM_1 || wParam == VK_OEM_2 || wParam == VK_OEM_3 ||
+            wParam == VK_OEM_4 || wParam == VK_OEM_5 || wParam == VK_OEM_6 || wParam == VK_OEM_7) {
+            return true;
+        }
     }
 
     if (state_machine_->mode() == InputMode::English) {
@@ -523,6 +529,14 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
                 char ch = vk_to_daqian_char(wParam);
                 if (ch != '\0') {
                     handled = state_machine_->process_key(ch, committed);
+                } else if (state_machine_->state() != EngineState::Idle) {
+                    std::string text = input.text;
+                    if (text.empty()) {
+                        if (wParam == VK_OEM_PLUS) text = shift_down ? "+" : "=";
+                    }
+                    if (!text.empty()) {
+                        handled = state_machine_->process_literal(text, committed);
+                    }
                 }
                 break;
             }
@@ -572,7 +586,7 @@ STDMETHODIMP EimeTextService::EnumDisplayAttributeInfo(IEnumTfDisplayAttributeIn
     TF_DISPLAYATTRIBUTE da_input = {};
     da_input.crText.type = TF_CT_NONE;
     da_input.crBk.type = TF_CT_NONE;
-    da_input.lsStyle = TF_LS_DOT;
+    da_input.lsStyle = TF_LS_SOLID;
     da_input.fBoldLine = FALSE;
     da_input.crLine.type = TF_CT_SYSCOLOR;
     da_input.crLine.nIndex = COLOR_WINDOWTEXT;
@@ -588,7 +602,7 @@ STDMETHODIMP EimeTextService::EnumDisplayAttributeInfo(IEnumTfDisplayAttributeIn
     da_target.bAttr = TF_ATTR_TARGET_CONVERTED;
 
     std::vector<ITfDisplayAttributeInfo*> list = {
-        new EimeDisplayAttributeInfo(GUID_EIME_DisplayAttr_Input, L"E-IME 組字虛線底線", da_input),
+        new EimeDisplayAttributeInfo(GUID_EIME_DisplayAttr_Input, L"E-IME 組字實線底線", da_input),
         new EimeDisplayAttributeInfo(GUID_EIME_DisplayAttr_Target, L"E-IME 選字粗實線底線", da_target)
     };
 
@@ -605,12 +619,12 @@ STDMETHODIMP EimeTextService::GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAt
         TF_DISPLAYATTRIBUTE da_input = {};
         da_input.crText.type = TF_CT_NONE;
         da_input.crBk.type = TF_CT_NONE;
-        da_input.lsStyle = TF_LS_DOT;
+        da_input.lsStyle = TF_LS_SOLID;
         da_input.fBoldLine = FALSE;
         da_input.crLine.type = TF_CT_SYSCOLOR;
         da_input.crLine.nIndex = COLOR_WINDOWTEXT;
         da_input.bAttr = TF_ATTR_INPUT;
-        *ppInfo = new EimeDisplayAttributeInfo(GUID_EIME_DisplayAttr_Input, L"E-IME 組字虛線底線", da_input);
+        *ppInfo = new EimeDisplayAttributeInfo(GUID_EIME_DisplayAttr_Input, L"E-IME 組字實線底線", da_input);
         return S_OK;
     }
 

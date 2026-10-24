@@ -109,6 +109,13 @@ public:
     bool is_expanded() const { return is_expanded_; }
     size_t candidates_per_page() const { return is_expanded_ ? 18 : 9; }
 
+    bool is_slot_pinned(size_t slot) const {
+        for (const auto& p : pins_) {
+            if (slot >= p.start_syllable_idx && slot < p.start_syllable_idx + p.length) return true;
+        }
+        return false;
+    }
+
     // 取得當前頁面的候選字清單 (未展開 9 個，展開模式 18 個雙欄，若為簡體模式自動轉換輸出顯示)
     std::vector<WordCandidate> current_page_candidates() const {
         std::vector<WordCandidate> page;
@@ -192,62 +199,129 @@ public:
             auto page_cands = current_page_candidates();
             switch (key) {
                 case SpecialKey::DownArrow: {
-                    if (selected_in_page_ + 1 < page_cands.size()) {
-                        selected_in_page_++;
-                    } else {
-                        size_t total_pages = total_candidate_pages();
-                        if (total_pages > 1) {
-                            candidate_page_ = (candidate_page_ + 1) % total_pages;
+                    if (is_expanded_) {
+                        if (selected_in_page_ < 9) {
+                            size_t col_max = std::min(size_t(9), page_cands.size());
+                            if (selected_in_page_ + 1 < col_max) {
+                                selected_in_page_++;
+                            } else {
+                                selected_in_page_ = 0;
+                            }
+                        } else {
+                            if (selected_in_page_ + 1 < page_cands.size()) {
+                                selected_in_page_++;
+                            } else {
+                                selected_in_page_ = 9;
+                            }
                         }
-                        selected_in_page_ = 0;
+                    } else {
+                        if (selected_in_page_ + 1 < page_cands.size()) {
+                            selected_in_page_++;
+                        } else {
+                            size_t total_pages = total_candidate_pages();
+                            if (total_pages > 1) {
+                                candidate_page_ = (candidate_page_ + 1) % total_pages;
+                            }
+                            selected_in_page_ = 0;
+                        }
                     }
                     return true;
                 }
                 case SpecialKey::UpArrow: {
-                    if (selected_in_page_ > 0) {
-                        selected_in_page_--;
-                    } else {
-                        size_t total_pages = total_candidate_pages();
-                        if (total_pages > 1) {
-                            candidate_page_ = (candidate_page_ + total_pages - 1) % total_pages;
+                    if (is_expanded_) {
+                        if (selected_in_page_ < 9) {
+                            if (selected_in_page_ > 0) {
+                                selected_in_page_--;
+                            } else {
+                                size_t col_max = std::min(size_t(9), page_cands.size());
+                                selected_in_page_ = col_max > 0 ? col_max - 1 : 0;
+                            }
+                        } else {
+                            if (selected_in_page_ > 9) {
+                                selected_in_page_--;
+                            } else {
+                                selected_in_page_ = page_cands.empty() ? 9 : page_cands.size() - 1;
+                            }
                         }
-                        auto prev_cands = current_page_candidates();
-                        selected_in_page_ = prev_cands.empty() ? 0 : prev_cands.size() - 1;
+                    } else {
+                        if (selected_in_page_ > 0) {
+                            selected_in_page_--;
+                        } else {
+                            size_t total_pages = total_candidate_pages();
+                            if (total_pages > 1) {
+                                candidate_page_ = (candidate_page_ + total_pages - 1) % total_pages;
+                            }
+                            auto prev_cands = current_page_candidates();
+                            selected_in_page_ = prev_cands.empty() ? 0 : prev_cands.size() - 1;
+                        }
                     }
                     return true;
                 }
                 case SpecialKey::RightArrow: {
-                    // 進入選字之後，按下方向鍵右：展開多頁選字表！
-                    if (!is_expanded_ && candidates_.size() > 9) {
-                        is_expanded_ = true;
-                        selected_in_page_ = 1;
+                    if (!is_expanded_) {
+                        if (candidates_.size() > 9) {
+                            is_expanded_ = true;
+                            auto exp_cands = current_page_candidates();
+                            size_t target = selected_in_page_ + 9;
+                            if (target < exp_cands.size()) {
+                                selected_in_page_ = target;
+                            } else if (exp_cands.size() > 9) {
+                                selected_in_page_ = exp_cands.size() - 1;
+                            }
+                        }
                         return true;
                     }
-                    if (selected_in_page_ + 1 < page_cands.size()) {
-                        selected_in_page_++;
+                    // 已展開模式：橫向切換欄位
+                    if (selected_in_page_ < 9) {
+                        size_t target = selected_in_page_ + 9;
+                        if (target < page_cands.size()) {
+                            selected_in_page_ = target;
+                        } else if (page_cands.size() > 9) {
+                            selected_in_page_ = page_cands.size() - 1;
+                        } else {
+                            size_t total_pages = total_candidate_pages();
+                            if (total_pages > 1) {
+                                candidate_page_ = (candidate_page_ + 1) % total_pages;
+                                selected_in_page_ = 0;
+                            }
+                        }
                     } else {
                         size_t total_pages = total_candidate_pages();
                         if (total_pages > 1) {
                             candidate_page_ = (candidate_page_ + 1) % total_pages;
+                            size_t row = selected_in_page_ - 9;
+                            auto next_cands = current_page_candidates();
+                            selected_in_page_ = std::min(row, next_cands.empty() ? 0 : next_cands.size() - 1);
                         }
-                        selected_in_page_ = 0;
                     }
                     return true;
                 }
                 case SpecialKey::LeftArrow: {
-                    if (is_expanded_ && selected_in_page_ == 0) {
-                        is_expanded_ = false;
+                    if (!is_expanded_) {
+                        if (candidate_page_ > 0) {
+                            candidate_page_--;
+                            selected_in_page_ = 0;
+                        }
                         return true;
                     }
-                    if (selected_in_page_ > 0) {
-                        selected_in_page_--;
+                    // 已展開模式：橫向切換欄位
+                    if (selected_in_page_ >= 9) {
+                        selected_in_page_ -= 9;
                     } else {
-                        size_t total_pages = total_candidate_pages();
-                        if (total_pages > 1) {
-                            candidate_page_ = (candidate_page_ + total_pages - 1) % total_pages;
+                        if (candidate_page_ > 0) {
+                            candidate_page_--;
+                            auto prev_cands = current_page_candidates();
+                            size_t row = selected_in_page_;
+                            if (row + 9 < prev_cands.size()) {
+                                selected_in_page_ = row + 9;
+                            } else if (prev_cands.size() > 9) {
+                                selected_in_page_ = prev_cands.size() - 1;
+                            } else {
+                                selected_in_page_ = std::min(row, prev_cands.empty() ? 0 : prev_cands.size() - 1);
+                            }
+                        } else {
+                            is_expanded_ = false;
                         }
-                        auto prev_cands = current_page_candidates();
-                        selected_in_page_ = prev_cands.empty() ? 0 : prev_cands.size() - 1;
                     }
                     return true;
                 }
@@ -424,6 +498,17 @@ public:
                 } else if (c == ' ' && !committed_syllables_.empty()) {
                     return process_literal(" ", out_commit_text);
                 } else if (c != ' ') {
+                    // 若當前音節為空，但游標前有音節：支援重複按聲調或修正聲調！
+                    if (cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
+                        !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
+                        auto& prev = committed_syllables_[cursor_idx_ - 1];
+                        if (prev.tone != km.tone) {
+                            prev.tone = km.tone;
+                            update_viterbi();
+                        }
+                        state_ = EngineState::Composing;
+                        return true;
+                    }
                     // 空音節按下聲調鍵 (3:ˇ, 4:ˋ, 6:ˊ, 7:˙) -> 視為無效按鍵，響鈴並攔截 (符合微軟新注音規範)
                     ring_bell();
                     return true;
@@ -456,6 +541,21 @@ public:
 
             // 介音 (ㄧㄨㄩ)
             if (km.category == ZhuyinParser::KeyMapping::Category::Medial) {
+                // 激進修正：若音調按早了 (例如 ㄉ + ˋ + ㄧ -> ㄉㄧˋ)，吸收介音至前一音節
+                if (current_syllable_.is_empty() && cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
+                    !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
+                    auto& prev = committed_syllables_[cursor_idx_ - 1];
+                    if (prev.tone != Tone::None && prev.medial.empty() && prev.rhyme.empty()) {
+                        Syllable test_syl = prev;
+                        test_syl.medial = km.symbol;
+                        if (!trie_.lookup_exact({test_syl}).empty() || trie_.lookup_exact({prev}).empty()) {
+                            prev.medial = km.symbol;
+                            update_viterbi();
+                            state_ = EngineState::Composing;
+                            return true;
+                        }
+                    }
+                }
                 // 一個音節僅能有一個介音；若已存在介音，直接拒絕並響鈴
                 if (!current_syllable_.medial.empty()) {
                     ring_bell();
@@ -469,6 +569,21 @@ public:
 
             // 韻母 (13)
             if (km.category == ZhuyinParser::KeyMapping::Category::Rhyme) {
+                // 激進修正：若音調按早了 (例如 ㄉ + ˋ + ㄠ -> ㄉㄠˋ，或 ㄉ + ˋ + ㄧ + ㄠ -> ㄉㄧㄠˋ)，吸收韻母至前一音節
+                if (current_syllable_.is_empty() && cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
+                    !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
+                    auto& prev = committed_syllables_[cursor_idx_ - 1];
+                    if (prev.tone != Tone::None && prev.rhyme.empty()) {
+                        Syllable test_syl = prev;
+                        test_syl.rhyme = km.symbol;
+                        if (!trie_.lookup_exact({test_syl}).empty() || trie_.lookup_exact({prev}).empty()) {
+                            prev.rhyme = km.symbol;
+                            update_viterbi();
+                            state_ = EngineState::Composing;
+                            return true;
+                        }
+                    }
+                }
                 // 一個音節僅能有一個韻母；若已存在韻母，直接拒絕並響鈴
                 if (!current_syllable_.rhyme.empty()) {
                     ring_bell();
