@@ -7,7 +7,7 @@
 ## 1. libchewing-data (酷音輸入法詞庫資料)
 
 * **專案網址**：https://github.com/chewing/libchewing-data
-* **使用範圍**：本專案之核心詞庫檔案 [`data/core_dict.txt`](file:///g:/我的雲端硬碟/02_專案/99_工具/輸入法優化/data/core_dict.txt) 係透過轉換腳本提取並整合自 `libchewing-data` 儲存庫中之 `dict/chewing/tsi.csv` 與 `word.csv`。
+* **使用範圍**：本專案之核心詞庫檔案 [`data/core_dict.txt`](data/core_dict.txt) 係透過轉換腳本提取並整合自 `libchewing-data` 儲存庫中之 `dict/chewing/tsi.csv` 與 `word.csv`。
 * **授權協議**：GNU Lesser General Public License version 2.1 or later (LGPL-2.1-or-later)
 * **版權所屬**：Copyright (c) Chewing Developers (酷音輸入法開發團隊)
 
@@ -23,7 +23,7 @@
 ## 2. OpenCC (Open Chinese Convert 開放中文轉換)
 
 * **專案網址**：https://github.com/BYVoid/OpenCC
-* **使用範圍**：本專案之簡繁漢字轉換表 [`engine/include/hanzi_data.h`](file:///g:/我的雲端硬碟/02_專案/99_工具/輸入法優化/engine/include/hanzi_data.h)（透過 [`tools/generate_hanzi_conv.py`](file:///g:/我的雲端硬碟/02_專案/99_工具/輸入法優化/tools/generate_hanzi_conv.py) 產出）係參考並衍生自 OpenCC 之繁簡字元對照資料 (`data/dictionary/TSCharacters.txt`)。
+* **使用範圍**：本專案之簡繁漢字轉換表 [`engine/include/hanzi_conv.h`](engine/include/hanzi_conv.h)（透過 [`tools/generate_hanzi_conv.py`](tools/generate_hanzi_conv.py) 產出）係參考並衍生自 OpenCC 之繁簡字元對照資料 (`data/dictionary/TSCharacters.txt`)。
 * **授權協議**：Apache License, Version 2.0
 * **版權所屬**：Copyright (c) 2010-2023 BYVoid and OpenCC Contributors
 
