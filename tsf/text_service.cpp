@@ -87,33 +87,48 @@ EimeTextService::~EimeTextService() {
 }
 
 void EimeTextService::initialize_engine_resources() {
-    wchar_t dll_path_buf[MAX_PATH] = {0};
-    GetModuleFileNameW(g_hInst, dll_path_buf, MAX_PATH);
-    std::filesystem::path base_dir = std::filesystem::path(dll_path_buf).parent_path();
+    try {
+        wchar_t dll_path_buf[MAX_PATH] = {0};
+        GetModuleFileNameW(g_hInst, dll_path_buf, MAX_PATH);
+        std::filesystem::path base_dir = std::filesystem::path(dll_path_buf).parent_path();
 
-    // 支援 build/ 目錄或專案根目錄尋找 data/
-    std::filesystem::path data_dir = base_dir / "data";
-    std::ifstream root_file(base_dir / "data-root.txt", std::ios::binary);
-    std::string root;
-    if (root_file && std::getline(root_file, root) && !root.empty()) {
-        if (root.back() == '\r') root.pop_back();
-        data_dir = std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(root.data()), root.size()));
-    } else if (!std::filesystem::exists(data_dir / "core_dict.txt")) {
-        data_dir = base_dir.parent_path() / "data";
+        // 支援 build/ 目錄或專案根目錄尋找 data/
+        std::filesystem::path data_dir = base_dir / "data";
+        std::ifstream root_file(base_dir / "data-root.txt", std::ios::binary);
+        std::string root;
+        if (root_file && std::getline(root_file, root) && !root.empty()) {
+            if (root.back() == '\r') root.pop_back();
+            data_dir = std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(root.data()), root.size()));
+        } else if (!std::filesystem::exists(data_dir / "core_dict.txt")) {
+            data_dir = base_dir.parent_path() / "data";
+        }
+        if (!std::filesystem::exists(data_dir / "core_dict.txt")) {
+            std::filesystem::path ws_dir = "C:/Users/Chiao/.gemini/antigravity/scratch/E-IME/data";
+            if (std::filesystem::exists(ws_dir / "core_dict.txt")) {
+                data_dir = ws_dir;
+            }
+        }
+
+        if (std::filesystem::exists(data_dir / "core_dict.txt")) {
+            DictLoader::load_from_file(data_dir / "core_dict.txt", trie_, false);
+        }
+        if (std::filesystem::exists(data_dir / "custom_words.txt")) {
+            DictLoader::load_from_file(data_dir / "custom_words.txt", trie_, false);
+        }
+
+        journal_ = std::make_unique<SyncJournal>(data_dir / "sync");
+        journal_->sync_all_devices(trie_);
+
+        decoder_ = std::make_unique<ViterbiDecoder>(trie_);
+        state_machine_ = std::make_unique<InputStateMachine>(trie_, *decoder_, journal_.get());
+    } catch (...) {
+        if (!decoder_) {
+            decoder_ = std::make_unique<ViterbiDecoder>(trie_);
+        }
+        if (!state_machine_) {
+            state_machine_ = std::make_unique<InputStateMachine>(trie_, *decoder_, nullptr);
+        }
     }
-
-    if (!DictLoader::load_from_file(data_dir / "core_dict.txt", trie_, false)) {
-        throw std::runtime_error("E-IME dictionary is unavailable");
-    }
-    if (std::filesystem::exists(data_dir / "custom_words.txt")) {
-        DictLoader::load_from_file(data_dir / "custom_words.txt", trie_, false);
-    }
-
-    journal_ = std::make_unique<SyncJournal>(data_dir / "sync");
-    journal_->sync_all_devices(trie_);
-
-    decoder_ = std::make_unique<ViterbiDecoder>(trie_);
-    state_machine_ = std::make_unique<InputStateMachine>(trie_, *decoder_, journal_.get());
 }
 
 STDMETHODIMP EimeTextService::QueryInterface(REFIID riid, void** ppvObj) {
