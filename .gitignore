@@ -1,0 +1,60 @@
+# ==========================================
+# E-IME Project .gitignore
+# ==========================================
+
+# 1. 建置產物與編譯輸出 (Build Artifacts)
+build/
+build_out/
+bin/
+out/
+cmake-build-*/
+*.exe
+*.dll
+*.so
+*.dylib
+*.a
+*.lib
+*.pdb
+*.obj
+*.o
+*.ilk
+*.exp
+
+# 2. CMake / Ninja 產生的中繼檔案
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+.ninja_*
+.ninja_log*
+.ninja_deps
+
+# 3. 執行期快取與動態二進位資料 (Runtime Data & Caches)
+*.bin
+data/*.bin
+data-root.txt
+
+# 4. 個人跨裝置學習日誌與設備識別 (Personal Device Delta Logs)
+data/sync/*.delta
+!data/sync/.gitkeep
+
+# 5. 測試日誌、測試輸出與本地報表 (Test Records & Outputs)
+testbench/results/
+*.log
+*_output.txt
+*report.json
+desktop_initial_failure.txt
+desktop_actual_output.txt
+
+# 6. 開發臨時測試腳本 (Scratch & Temp)
+scratch/
+
+# 7. Python 快取
+__pycache__/
+*.py[cod]
+
+# 8. 編輯器與 IDE 設定檔
+.vscode/
+.vs/
+.idea/
+*.user
+*.suo
