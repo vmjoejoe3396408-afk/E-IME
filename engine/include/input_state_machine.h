@@ -106,11 +106,15 @@ public:
         return offset;
     }
 
-    // 取得當前頁面的候選字清單 (最多 9 個，若為簡體模式自動轉換輸出顯示)
+    bool is_expanded() const { return is_expanded_; }
+    size_t candidates_per_page() const { return is_expanded_ ? 18 : 9; }
+
+    // 取得當前頁面的候選字清單 (未展開 9 個，展開模式 18 個雙欄，若為簡體模式自動轉換輸出顯示)
     std::vector<WordCandidate> current_page_candidates() const {
         std::vector<WordCandidate> page;
-        size_t start = candidate_page_ * CANDIDATES_PER_PAGE;
-        for (size_t i = start; i < std::min(candidates_.size(), start + CANDIDATES_PER_PAGE); ++i) {
+        size_t per_page = candidates_per_page();
+        size_t start = candidate_page_ * per_page;
+        for (size_t i = start; i < std::min(candidates_.size(), start + per_page); ++i) {
             auto cand = candidates_[i];
             if (charset_ == OutputCharset::Simplified) {
                 cand.text = HanziConverter::to_simplified(cand.text);
@@ -122,7 +126,8 @@ public:
 
     size_t total_candidate_pages() const {
         if (candidates_.empty()) return 0;
-        return (candidates_.size() + CANDIDATES_PER_PAGE - 1) / CANDIDATES_PER_PAGE;
+        size_t per_page = candidates_per_page();
+        return (candidates_.size() + per_page - 1) / per_page;
     }
 
     // 切換繁體/簡體中文輸出模式 (Ctrl + Shift + F)
@@ -186,8 +191,7 @@ public:
         if (state_ == EngineState::CandidateOpen) {
             auto page_cands = current_page_candidates();
             switch (key) {
-                case SpecialKey::DownArrow:
-                case SpecialKey::RightArrow: {
+                case SpecialKey::DownArrow: {
                     if (selected_in_page_ + 1 < page_cands.size()) {
                         selected_in_page_++;
                     } else {
@@ -199,8 +203,42 @@ public:
                     }
                     return true;
                 }
-                case SpecialKey::UpArrow:
+                case SpecialKey::UpArrow: {
+                    if (selected_in_page_ > 0) {
+                        selected_in_page_--;
+                    } else {
+                        size_t total_pages = total_candidate_pages();
+                        if (total_pages > 1) {
+                            candidate_page_ = (candidate_page_ + total_pages - 1) % total_pages;
+                        }
+                        auto prev_cands = current_page_candidates();
+                        selected_in_page_ = prev_cands.empty() ? 0 : prev_cands.size() - 1;
+                    }
+                    return true;
+                }
+                case SpecialKey::RightArrow: {
+                    // 進入選字之後，按下方向鍵右：展開多頁選字表！
+                    if (!is_expanded_ && candidates_.size() > 9) {
+                        is_expanded_ = true;
+                        selected_in_page_ = 1;
+                        return true;
+                    }
+                    if (selected_in_page_ + 1 < page_cands.size()) {
+                        selected_in_page_++;
+                    } else {
+                        size_t total_pages = total_candidate_pages();
+                        if (total_pages > 1) {
+                            candidate_page_ = (candidate_page_ + 1) % total_pages;
+                        }
+                        selected_in_page_ = 0;
+                    }
+                    return true;
+                }
                 case SpecialKey::LeftArrow: {
+                    if (is_expanded_ && selected_in_page_ == 0) {
+                        is_expanded_ = false;
+                        return true;
+                    }
                     if (selected_in_page_ > 0) {
                         selected_in_page_--;
                     } else {
@@ -331,7 +369,8 @@ public:
         // 1. 選字清單展開狀態
         if (state_ == EngineState::CandidateOpen) {
             if (c >= '1' && c <= '9') {
-                size_t idx = static_cast<size_t>(c - '1');
+                size_t base = (is_expanded_ && selected_in_page_ >= 9) ? 9 : 0;
+                size_t idx = base + static_cast<size_t>(c - '1');
                 if (select_candidate_in_current_page(idx)) {
                     return true;
                 }
@@ -500,6 +539,7 @@ public:
         candidate_target_idx_ = 0;
         candidate_page_ = 0;
         selected_in_page_ = 0;
+        is_expanded_ = false;
     }
 
 private:
@@ -527,6 +567,7 @@ private:
     size_t candidate_target_idx_;
     size_t candidate_page_;
     size_t selected_in_page_;
+    bool is_expanded_ = false;
 
     void insert_completed_syllable(const Syllable& s) {
         // 若在鎖定區段內部插入音節/符號，移除該鎖定避免索引錯亂
@@ -619,12 +660,14 @@ private:
         if (!candidates_.empty()) {
             candidate_page_ = 0;
             selected_in_page_ = 0;
+            is_expanded_ = false;
             state_ = EngineState::CandidateOpen;
         }
     }
 
     bool select_candidate_in_current_page(size_t index_in_page) {
-        size_t global_idx = candidate_page_ * CANDIDATES_PER_PAGE + index_in_page;
+        size_t per_page = candidates_per_page();
+        size_t global_idx = candidate_page_ * per_page + index_in_page;
         if (global_idx >= candidates_.size()) return false;
 
         const auto chosen = candidates_[global_idx];
@@ -673,6 +716,7 @@ private:
 
         // Choosing only pins the word; keep the composition editable for reselection.
         // Enter in Composing is the separate, explicit document commit.
+        is_expanded_ = false;
         cursor_idx_ = std::min(committed_syllables_.size(), pin_end);
         state_ = EngineState::Composing;
         return true;

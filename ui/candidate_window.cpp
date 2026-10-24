@@ -153,10 +153,19 @@ void CandidateWindow::recalculate_layout() {
     ReleaseDC(hwnd_, hdc);
 
     const int item_h = 38;
-    int min_width = 160;
-    width_ = std::max({min_width, candidate_width + 80, static_cast<int>(tag_sz.cx) + 36});
+    bool is_two_col = cand_texts_.size() > 9;
     int footer_h = (total_pages_ > 1) ? 24 : 8;
-    height_ = 12 + static_cast<int>(cand_texts_.size()) * item_h + footer_h;
+
+    if (is_two_col) {
+        int col_width = std::max(130, candidate_width + 56);
+        width_ = col_width * 2 + 36;
+        int max_rows = 9;
+        height_ = 12 + max_rows * item_h + footer_h;
+    } else {
+        int min_width = 160;
+        width_ = std::max({min_width, candidate_width + 80, static_cast<int>(tag_sz.cx) + 36});
+        height_ = 12 + static_cast<int>(cand_texts_.size()) * item_h + footer_h;
+    }
 }
 
 void CandidateWindow::show_at(int screen_x, int screen_y) {
@@ -223,19 +232,35 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
 
     // One candidate per row; number keys and arrow navigation keep their ordering.
     const int item_h = 38;
-    const int cur_x = 16;
+    bool is_two_col = cand_texts_.size() > 9;
+    int col_width = is_two_col ? std::max(130, (w - 36) / 2) : (w - 24);
+
+    if (is_two_col) {
+        // 雙欄分隔線
+        HPEN div_pen = CreatePen(PS_SOLID, 1, RGB(230, 230, 230));
+        HGDIOBJ old_p = SelectObject(mem_dc, div_pen);
+        MoveToEx(mem_dc, col_width + 16, 10, nullptr);
+        LineTo(mem_dc, col_width + 16, h - 16);
+        SelectObject(mem_dc, old_p);
+        DeleteObject(div_pen);
+    }
+
     for (size_t i = 0; i < cand_texts_.size(); ++i) {
-        SelectObject(mem_dc, font_cand_);
-        const int row_y = 6 + static_cast<int>(i) * item_h;
+        int col = (is_two_col && i >= 9) ? 1 : 0;
+        int row = (is_two_col && i >= 9) ? static_cast<int>(i - 9) : static_cast<int>(i);
+        int cur_x = (col == 0) ? 16 : (col_width + 26);
+        int item_w = is_two_col ? (col_width - 10) : (w - 12);
+        const int row_y = 6 + row * item_h;
 
         // 高亮選中項目膠囊背景 (微軟現代淺藍 #EBF3FC 與左側微軟藍指示條 #0067C0)
         if (i == selected_idx_) {
-            RECT hi_rc = {6, row_y, w - 6, row_y + item_h};
+            int hi_left = (col == 0) ? 6 : (col_width + 16);
+            RECT hi_rc = {hi_left, row_y, hi_left + item_w, row_y + item_h};
             HBRUSH hi_brush = CreateSolidBrush(RGB(235, 243, 252));
             FillRect(mem_dc, &hi_rc, hi_brush);
             DeleteObject(hi_brush);
 
-            RECT ind_rc = {6, row_y + 4, 10, row_y + item_h - 4};
+            RECT ind_rc = {hi_left, row_y + 4, hi_left + 4, row_y + item_h - 4};
             HBRUSH ind_brush = CreateSolidBrush(RGB(0, 103, 192));
             FillRect(mem_dc, &ind_rc, ind_brush);
             DeleteObject(ind_brush);
@@ -244,14 +269,15 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
         // 數字序號 (1~9)
         SelectObject(mem_dc, font_num_);
         SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 103, 192) : RGB(115, 115, 115));
-        wchar_t num_buf[4] = {static_cast<wchar_t>(L'1' + i), L'.', L'\0'};
+        int num_idx = (i >= 9) ? static_cast<int>(i - 9) : static_cast<int>(i);
+        wchar_t num_buf[4] = {static_cast<wchar_t>(L'1' + num_idx), L'.', L'\0'};
         RECT num_rc = {cur_x, row_y, cur_x + 24, row_y + item_h};
         DrawTextW(mem_dc, num_buf, -1, &num_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
         // 候選詞文字 (高對比清楚黑字)
         SelectObject(mem_dc, font_cand_);
         SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 0, 0) : RGB(32, 32, 32));
-        RECT txt_rc = {cur_x + 28, row_y, w - 14, row_y + item_h};
+        RECT txt_rc = {cur_x + 28, row_y, cur_x + item_w - 4, row_y + item_h};
         DrawTextW(mem_dc, cand_texts_[i].c_str(), static_cast<int>(cand_texts_[i].size()), &txt_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
     }
