@@ -54,6 +54,25 @@ if (WIN32)
         PREFIX ""
         OUTPUT_NAME "eime_tip"
     )
+    if (MINGW)
+        # GCC/ld may lose non-ASCII characters in an absolute .def filename.
+        configure_file(tsf/eime_tip.def "${CMAKE_CURRENT_BINARY_DIR}/eime_tip.def" COPYONLY)
+        target_link_options(eime_tsf PRIVATE eime_tip.def)
+        set_property(TARGET eime_tsf APPEND PROPERTY LINK_DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/eime_tip.def")
+        # Some recent MinGW CRTs moved the default fenv to libmingw32. A DLL
+        # does not reference _fpreset, so static libmingwex may request this
+        # symbol only after that archive has been scanned. Request it early,
+        # but only when this toolchain actually provides it in libmingw32.
+        execute_process(COMMAND "${CMAKE_CXX_COMPILER}" -print-file-name=libmingw32.a
+            OUTPUT_VARIABLE EIME_MINGW32_ARCHIVE OUTPUT_STRIP_TRAILING_WHITESPACE)
+        execute_process(COMMAND "${CMAKE_NM}" -g --defined-only "${EIME_MINGW32_ARCHIVE}"
+            OUTPUT_VARIABLE EIME_MINGW32_SYMBOLS ERROR_QUIET)
+        if (EIME_MINGW32_SYMBOLS MATCHES "[ \t][A-Z][ \t]+__mingw_fe_dfl_env([\r\n]|$)")
+            target_link_options(eime_tsf PRIVATE "-Wl,--undefined=__mingw_fe_dfl_env")
+        endif()
+    else()
+        target_sources(eime_tsf PRIVATE tsf/eime_tip.def)
+    endif()
     target_link_libraries(eime_tsf PRIVATE
         user32
         gdi32

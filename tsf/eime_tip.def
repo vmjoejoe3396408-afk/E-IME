@@ -1,0 +1,6 @@
+LIBRARY eime_tip
+EXPORTS
+    DllGetClassObject
+    DllCanUnloadNow
+    DllRegisterServer
+    DllUnregisterServer

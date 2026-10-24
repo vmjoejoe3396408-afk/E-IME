@@ -12,6 +12,8 @@
 * 日誌壓縮改為暫存檔替換；寫入失敗不更新學習權重，過大權重採飽和計數。
 * 新增同步回歸測試、隔離 CTest 測試資料及 Windows MSVC／MinGW CI。
 * CMake 版本統一為 0.4.0；MSVC 加入 UTF-8 與靜態 CRT 設定。
+* COM DLL 匯出改由 `.def` 定義，函式使用與 Windows SDK 一致的 `STDAPI` 宣告，修正 MSVC 的 C2375 連結屬性衝突。
+* MinGW 連結使用建置目錄內的相對 `.def` 路徑，保留中文專案路徑支援；對將預設浮點環境移至 `libmingw32` 的新版 CRT，提前引入該符號以支援靜態連結 DLL。
 * 補齊 LGPL 2.1、GPL 2.0、Apache 2.0 授權與 OpenCC 作者聲明；資料產生器固定上游 commit，並可重建比對。
 * 名稱更新腳本改呼叫正式安裝器，移除本機版本雜湊與 Windows PowerShell 5.1 依賴；部署腳本檢查編譯失敗。
 

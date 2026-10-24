@@ -74,9 +74,7 @@ private:
 
 } // namespace eime
 
-extern "C" {
-
-BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved) {
+extern "C" BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved) {
     (void)lpReserved;
     if (dwReason == DLL_PROCESS_ATTACH) {
         OutputDebugStringA("--> E-IME DllMain DLL_PROCESS_ATTACH entered\n");
@@ -86,7 +84,8 @@ BOOL WINAPI DllMain(HINSTANCE hInstance, DWORD dwReason, LPVOID lpReserved) {
     return TRUE;
 }
 
-__declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
+// Match the Windows SDK declarations; eime_tip.def provides the exported names.
+STDAPI DllGetClassObject(REFCLSID rclsid, REFIID riid, LPVOID* ppv) {
     if (!ppv) return E_INVALIDARG;
     *ppv = nullptr;
 
@@ -100,18 +99,16 @@ __declspec(dllexport) HRESULT WINAPI DllGetClassObject(REFCLSID rclsid, REFIID r
     return hr;
 }
 
-__declspec(dllexport) HRESULT WINAPI DllCanUnloadNow(void) {
+STDAPI DllCanUnloadNow(void) {
     return (eime::g_dllRefCount.load() <= 0) ? S_OK : S_FALSE;
 }
 
-__declspec(dllexport) HRESULT WINAPI DllRegisterServer(void) {
+STDAPI DllRegisterServer(void) {
     HRESULT hr = eime::RegisterComServer();
     if (FAILED(hr)) return hr;
     return eime::RegisterTsfProfiles();
 }
 
-__declspec(dllexport) HRESULT WINAPI DllUnregisterServer(void) {
+STDAPI DllUnregisterServer(void) {
     return eime::UnregisterTsfProfiles();
 }
-
-} // extern "C"
