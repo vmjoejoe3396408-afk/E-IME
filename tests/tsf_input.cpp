@@ -246,6 +246,41 @@ int wmain(int argc, wchar_t** argv) {
 
         CHECK(SUCCEEDED(type(sink, context, "h4ji3\r")));
         CHECK(context->range()->current_text() == prefix + L"：；次我");
+
+        // Test comma in various conditions:
+        // A. Idle Ctrl+,
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // B. Idle Shift+,
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, false, true)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // C. Leader key ` then ,
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_3)));
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // D. Composing then Ctrl+,
+        CHECK(SUCCEEDED(type(sink, context, "su3"))); // 你
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，你，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // E. Composing then Shift+,
+        CHECK(SUCCEEDED(type(sink, context, "cl3"))); // 好
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, false, true)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，你，好，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // F. Single syllable 次 (h4) without enter, then Ctrl+,
+        CHECK(SUCCEEDED(type(sink, context, "h4"))); // 次
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，你，好，次，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
     }
 
     // MS-IME typo phonotactic permutation ('k' ㄜ + '2' ㄉ -> 'ㄉㄜ', + '7' -> '的')

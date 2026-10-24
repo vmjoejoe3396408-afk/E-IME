@@ -262,27 +262,41 @@ void EimeTextService::observe_ctrl_key(WPARAM vk, LPARAM flags, bool down) {
                    | ((GetKeyState(VK_RCONTROL) & 0x8000) ? 2u : 0u);
         ctrl_state_known_ = true;
     }
-    const unsigned side = (vk == VK_RCONTROL || (vk == VK_CONTROL && (flags & (1LL << 24))) || ((GetKeyState(VK_RCONTROL) & 0x8000) != 0)) ? 2u : 1u;
-    if (down) ctrl_keys_ |= side;
-    else ctrl_keys_ &= ~side;
+    const unsigned side = (vk == VK_RCONTROL || (vk == VK_CONTROL && (flags & (1LL << 24))) || ((GetKeyState(VK_RCONTROL) & 0x8000) != 0) || ((GetAsyncKeyState(VK_RCONTROL) & 0x8000) != 0)) ? 2u : 1u;
+    if (down) {
+        ctrl_keys_ |= side;
+    } else {
+        ctrl_keys_ &= ~side;
+        if (!((GetAsyncKeyState(VK_LCONTROL) & 0x8000) || (GetAsyncKeyState(VK_RCONTROL) & 0x8000) || (GetKeyState(VK_CONTROL) & 0x8000))) {
+            ctrl_keys_ = 0;
+        }
+    }
 }
 
 void EimeTextService::observe_shift_key(WPARAM vk, LPARAM flags, bool down) {
     if (vk != VK_SHIFT && vk != VK_LSHIFT && vk != VK_RSHIFT) return;
     UINT sc = static_cast<UINT>((flags >> 16) & 0xff);
-    const bool is_right = (vk == VK_RSHIFT || sc == 0x36 || ((GetKeyState(VK_RSHIFT) & 0x8000) != 0));
+    const bool is_right = (vk == VK_RSHIFT || sc == 0x36 || ((GetKeyState(VK_RSHIFT) & 0x8000) != 0) || ((GetAsyncKeyState(VK_RSHIFT) & 0x8000) != 0));
     if (!shift_state_known_) {
         shift_keys_ = ((GetKeyState(VK_LSHIFT) & 0x8000) ? 1u : 0u)
                     | ((GetKeyState(VK_RSHIFT) & 0x8000) ? 2u : 0u);
         shift_state_known_ = true;
     }
     const unsigned side = is_right ? 2u : 1u;
-    if (down) shift_keys_ |= side;
-    else shift_keys_ &= ~side;
+    if (down) {
+        shift_keys_ |= side;
+    } else {
+        shift_keys_ &= ~side;
+        if (!((GetAsyncKeyState(VK_LSHIFT) & 0x8000) || (GetAsyncKeyState(VK_RSHIFT) & 0x8000) || (GetKeyState(VK_SHIFT) & 0x8000))) {
+            shift_keys_ = 0;
+        }
+    }
 }
 
 EimeTextService::KeyInput EimeTextService::capture_key(WPARAM vk, LPARAM flags) const {
-    const auto down = [](int key) { return (GetKeyState(key) & 0x8000) != 0; };
+    const auto down = [](int key) {
+        return ((GetKeyState(key) & 0x8000) != 0) || ((GetAsyncKeyState(key) & 0x8000) != 0);
+    };
     bool ctrl_down  = (ctrl_state_known_ && ctrl_keys_ != 0) || down(VK_CONTROL) || down(VK_LCONTROL) || down(VK_RCONTROL);
     bool shift_down = (shift_state_known_ && shift_keys_ != 0) || down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
     bool is_rctrl   = (ctrl_state_known_ && (ctrl_keys_ & 2u)) || down(VK_RCONTROL);
@@ -340,6 +354,12 @@ bool EimeTextService::would_eat_key(const KeyInput& input) const {
             return true;
         }
         return false;
+    }
+
+    if (state_machine_->mode() == InputMode::Chinese && shift_down) {
+        if (wParam == VK_OEM_COMMA || wParam == VK_OEM_PERIOD || wParam == VK_OEM_1 || wParam == VK_OEM_2) {
+            return true;
+        }
     }
 
     // Printable keypad keys are literals, independent of the Zhuyin number row.
@@ -511,7 +531,7 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
     observe_shift_key(wParam, lParam, true);
     // Use the modifier/text snapshot accepted by OnTestKeyDown, even if the host
     // has advanced its keyboard state before delivering OnKeyDown.
-    const auto input = tested_key_ && tested_key_->vk == wParam && tested_key_->flags == lParam
+    const auto input = tested_key_ && tested_key_->vk == wParam
         ? *tested_key_ : capture_key(wParam, lParam);
     tested_key_.reset();
     prepare_context(pic);
@@ -573,6 +593,8 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
             if (wParam == '1') ch = '!';
             else if (wParam == VK_OEM_1) ch = ':';
             else if (wParam == VK_OEM_2) ch = '?';
+            else if (wParam == VK_OEM_COMMA) ch = ',';
+            else if (wParam == VK_OEM_PERIOD) ch = '.';
             else ch = vk_to_daqian_char(wParam);
         } else {
             ch = vk_to_daqian_char(wParam);
