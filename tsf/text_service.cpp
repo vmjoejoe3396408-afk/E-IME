@@ -552,6 +552,8 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
         handled = state_machine_->process_literal("。", committed);
     } else if (state_machine_->mode() == InputMode::Chinese && shift_down && wParam == VK_OEM_2) {
         handled = state_machine_->process_literal("？", committed);
+    } else if (state_machine_->mode() == InputMode::Chinese && shift_down && wParam == VK_OEM_1) {
+        handled = state_machine_->process_literal("：", committed);
     } else if (state_machine_->mode() == InputMode::Chinese && wParam == VK_OEM_3) {
         handled = state_machine_->process_key('`', committed);
     } else if (wParam == VK_PACKET) {
@@ -566,8 +568,15 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
             handled = state_machine_->process_literal(text, committed);
         }
     } else if (ctrl_down) {
-        // Number-row 1 is a Zhuyin key without modifiers; Ctrl+Shift+1 is ！.
-        char ch = shift_down && wParam == '1' ? '!' : vk_to_daqian_char(wParam);
+        char ch = '\0';
+        if (shift_down) {
+            if (wParam == '1') ch = '!';
+            else if (wParam == VK_OEM_1) ch = ':';
+            else if (wParam == VK_OEM_2) ch = '?';
+            else ch = vk_to_daqian_char(wParam);
+        } else {
+            ch = vk_to_daqian_char(wParam);
+        }
         handled = state_machine_->process_ctrl_punctuation(ch, committed);
     } else if (auto text = input.text;
                !text.empty() && (is_keypad_text_key(wParam) || shift_down || state_machine_->mode() == InputMode::English)) {

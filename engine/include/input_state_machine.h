@@ -555,13 +555,14 @@ public:
             // 介音 (ㄧㄨㄩ)
             if (km.category == ZhuyinParser::KeyMapping::Category::Medial) {
                 // 激進修正：若音調按早了 (例如 ㄉ + ˋ + ㄧ -> ㄉㄧˋ)，吸收介音至前一音節
+                // 注意：只有在前一音節不是有效音節時才允許補全，絕對不可破壞已完成的有效單字（如 ㄘˋ 次）
                 if (current_syllable_.is_empty() && cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
                     !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
                     auto& prev = committed_syllables_[cursor_idx_ - 1];
                     if (prev.tone != Tone::None && prev.medial.empty() && prev.rhyme.empty()) {
                         Syllable test_syl = prev;
                         test_syl.medial = km.symbol;
-                        if (!trie_.lookup_exact({test_syl}).empty() || trie_.lookup_exact({prev}).empty()) {
+                        if (trie_.lookup_exact({prev}).empty() && !trie_.lookup_exact({test_syl}).empty()) {
                             prev.medial = km.symbol;
                             update_viterbi();
                             state_ = EngineState::Composing;
@@ -582,14 +583,15 @@ public:
 
             // 韻母 (13)
             if (km.category == ZhuyinParser::KeyMapping::Category::Rhyme) {
-                // 激進修正：若音調按早了 (例如 ㄉ + ˋ + ㄠ -> ㄉㄠˋ，或 ㄉ + ˋ + ㄧ + ㄠ -> ㄉㄧㄠˋ)，吸收韻母至前一音節
+                // 激進修正：若音調按早了 (例如 ㄉ + ˋ + ㄠ -> ㄉㄠˋ)，吸收韻母至前一音節
+                // 注意：只有在前一音節不是有效音節時才允許補全，絕對不可破壞已完成的有效單字（如 ㄘˋ 次）
                 if (current_syllable_.is_empty() && cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
                     !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
                     auto& prev = committed_syllables_[cursor_idx_ - 1];
                     if (prev.tone != Tone::None && prev.rhyme.empty()) {
                         Syllable test_syl = prev;
                         test_syl.rhyme = km.symbol;
-                        if (!trie_.lookup_exact({test_syl}).empty() || trie_.lookup_exact({prev}).empty()) {
+                        if (trie_.lookup_exact({prev}).empty() && !trie_.lookup_exact({test_syl}).empty()) {
                             prev.rhyme = km.symbol;
                             update_viterbi();
                             state_ = EngineState::Composing;

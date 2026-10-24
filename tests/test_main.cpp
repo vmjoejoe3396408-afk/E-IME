@@ -693,13 +693,17 @@ bool test_aggressive_correction(eime::ZhuyinTrie& trie, const eime::ViterbiDecod
     sm.process_key('l', out); // ㄠ (韻母到來)
     EIME_ASSERT(sm.composition_text() == "到" || sm.composition_text() == "倒", "早按聲調輸入 ㄉ+ˋ+ㄠ 應自動重組成 ㄉㄠˋ 並選出『到』或『倒』，實際為: " + sm.composition_text());
 
-    // 2. 驗證介音+早按聲調+韻母：2 (ㄉ) + u (ㄧ) + 4 (ˋ) + l (ㄠ) -> ㄉㄧㄠˋ (掉/釣)
+    // 2. 驗證已完成的有效音節（如 ㄘˋ 次）決不會被後續的介音吸收變成「促」
     sm.reset();
-    sm.process_key('2', out); // ㄉ
-    sm.process_key('u', out); // ㄧ
-    sm.process_key('4', out); // ˋ
-    sm.process_key('l', out); // ㄠ
-    EIME_ASSERT(sm.composition_text() == "掉", "早按聲調輸入 ㄉ+ㄧ+ˋ+ㄠ 應自動重組成 ㄉㄧㄠˋ，實際為: " + sm.composition_text());
+    sm.process_key('h', out); // ㄘ
+    sm.process_key('4', out); // ˋ -> 次
+    EIME_ASSERT(sm.composition_text() == "次", "輸入 ㄘ+ˋ 應為『次』，實際為: " + sm.composition_text());
+    sm.process_key('j', out); // ㄨ (介音，開始輸入下一個字「我」)
+    EIME_ASSERT(sm.composition_text() == "次", "輸入 ㄨ 決不可吞噬前字變成『促』，組字文字應保留『次』，實際為: " + sm.composition_text());
+    EIME_ASSERT(sm.get_display_line_with_cursor() == "次[ㄨ]", "組字行應顯示為 次[ㄨ]，實際為: " + sm.get_display_line_with_cursor());
+    sm.process_key('i', out); // ㄛ
+    sm.process_key('3', out); // ˇ -> 我
+    EIME_ASSERT(sm.composition_text() == "次我", "連續輸入 ㄘˋ ㄨㄛˇ 應輸出『次我』，實際為: " + sm.composition_text());
 
     // 3. 驗證候選字窗展開與左右欄位切換
     sm.reset();
@@ -762,12 +766,24 @@ bool test_four_column_and_leader_comma(eime::ZhuyinTrie& trie, const eime::Viter
     sm.process_special_key(eime::SpecialKey::Enter, out);
     EIME_ASSERT(out == "？", "按 Enter 應輸出全形問號『？』");
 
-    // 2. 測試 Ctrl 標點符號快捷鍵
+    // 2. 測試 Ctrl 標點符號快捷鍵 (Ctrl+, -> ，, Ctrl+; -> ；, Ctrl+Shift+; / Ctrl+: -> ：)
     out.clear();
     sm.process_ctrl_punctuation(',', out);
     EIME_ASSERT(sm.composition_text() == "，", "Ctrl+, 組字區應呈現『，』，實際為: " + sm.composition_text());
     sm.process_special_key(eime::SpecialKey::Enter, out);
     EIME_ASSERT(out == "，", "按 Enter 應輸出『，』");
+
+    out.clear();
+    sm.process_ctrl_punctuation(';', out);
+    EIME_ASSERT(sm.composition_text() == "；", "Ctrl+; 組字區應呈現『；』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "；", "按 Enter 應輸出『；』");
+
+    out.clear();
+    sm.process_ctrl_punctuation(':', out);
+    EIME_ASSERT(sm.composition_text() == "：", "Ctrl+Shift+; (Ctrl+:) 組字區應呈現『：』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "：", "按 Enter 應輸出『：』");
 
     // 3. 測試 4 欄位展開 (candidates_per_page == 36)
     sm.reset();

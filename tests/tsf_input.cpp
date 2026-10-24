@@ -233,6 +233,21 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(SUCCEEDED(shift_toggle(sink, context)));
     }
 
+    // Ctrl+Shift+; inserts fullwidth colon L"：" while Ctrl+; inserts fullwidth semicolon L"；"
+    // and consecutive typing 次 (h4) + 我 (ji3) does not turn 次 into 促
+    {
+        const auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_1, true, true)));
+        CHECK(context->range()->current_text() == prefix + L"：");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_1, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        CHECK(SUCCEEDED(type(sink, context, "h4ji3\r")));
+        CHECK(context->range()->current_text() == prefix + L"：；次我");
+    }
+
     // MS-IME typo phonotactic permutation ('k' ㄜ + '2' ㄉ -> 'ㄉㄜ', + '7' -> '的')
     CHECK(SUCCEEDED(type(sink, context, "k"))); // ㄜ
     CHECK(SUCCEEDED(type(sink, context, "2"))); // ㄉ -> reorders to ㄉㄜ
