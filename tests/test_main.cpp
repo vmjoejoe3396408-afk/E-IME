@@ -725,7 +725,14 @@ bool test_aggressive_correction(eime::ZhuyinTrie& trie, const eime::ViterbiDecod
     sm.process_special_key(eime::SpecialKey::Backspace, out);
     EIME_ASSERT(sm.composition_text() == "到" || sm.composition_text() == "倒", "按 Backspace 應刪除 =，實際為: " + sm.composition_text());
 
-    std::cout << "  -> [PASS] 激進修正與左右選字切換驗證通過" << std::endl;
+    // 5. 驗證右 Ctrl + 右 Shift 繁簡獨立快捷鍵：S (切換簡體) 與 T (切換繁體)
+    sm.reset();
+    sm.process_special_key(eime::SpecialKey::CharsetSimplified, out);
+    EIME_ASSERT(sm.charset() == eime::OutputCharset::Simplified, "按右 Shift+Ctrl+S 應切換為簡體模式");
+    sm.process_special_key(eime::SpecialKey::CharsetTraditional, out);
+    EIME_ASSERT(sm.charset() == eime::OutputCharset::Traditional, "按右 Shift+Ctrl+T 應切換為繁體模式");
+
+    std::cout << "  -> [PASS] 激進修正、左右選字切換與右側繁簡快捷鍵驗證通過" << std::endl;
     return true;
 }
 

@@ -19,9 +19,7 @@
 namespace eime {
 
 inline void ring_bell() {
-#ifdef _WIN32
-    ::MessageBeep(0xFFFFFFFF);
-#endif
+    // 預設靜音：避免打字錯誤或按鍵衝突時持續發出系統蜂鳴聲吵到使用者
 }
 
 enum class InputMode {
@@ -45,7 +43,9 @@ enum class SpecialKey {
     PageUp,
     PageDown,
     ShiftToggle,
-    CharsetToggle,  // 繁簡切換 (Ctrl + Shift + F)
+    CharsetToggle,        // 繁簡切換 (Ctrl + Shift + F)
+    CharsetTraditional,   // 切換為繁體 (右 Shift + 右 Ctrl + T)
+    CharsetSimplified,    // 切換為簡體 (右 Shift + 右 Ctrl + S)
     Backspace,
     DeleteKey,
     Enter,
@@ -175,6 +175,18 @@ public:
 
         if (key == SpecialKey::CharsetToggle) {
             toggle_charset();
+            return true;
+        }
+
+        if (key == SpecialKey::CharsetTraditional) {
+            set_charset(OutputCharset::Traditional);
+            update_viterbi();
+            return true;
+        }
+
+        if (key == SpecialKey::CharsetSimplified) {
+            set_charset(OutputCharset::Simplified);
+            update_viterbi();
             return true;
         }
 

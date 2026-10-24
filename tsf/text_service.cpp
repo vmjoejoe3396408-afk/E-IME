@@ -212,6 +212,8 @@ STDMETHODIMP EimeTextService::OnSetFocus(BOOL fForeground) {
         tested_key_.reset();
         ctrl_keys_ = 0;
         ctrl_state_known_ = false;
+        shift_keys_ = 0;
+        shift_state_known_ = false;
         candidate_window_.hide();
     } else if (journal_) {
         // 當切換視窗重新取得焦點時，順便增量同步雲端目錄的新詞頻
@@ -245,18 +247,38 @@ void EimeTextService::observe_ctrl_key(WPARAM vk, LPARAM flags, bool down) {
                    | ((GetKeyState(VK_RCONTROL) & 0x8000) ? 2u : 0u);
         ctrl_state_known_ = true;
     }
-    const unsigned side = (vk == VK_RCONTROL || (vk == VK_CONTROL && (flags & (1LL << 24)))) ? 2u : 1u;
+    const unsigned side = (vk == VK_RCONTROL || (vk == VK_CONTROL && (flags & (1LL << 24))) || ((GetKeyState(VK_RCONTROL) & 0x8000) != 0)) ? 2u : 1u;
     if (down) ctrl_keys_ |= side;
     else ctrl_keys_ &= ~side;
 }
 
+void EimeTextService::observe_shift_key(WPARAM vk, LPARAM flags, bool down) {
+    if (vk != VK_SHIFT && vk != VK_LSHIFT && vk != VK_RSHIFT) return;
+    UINT sc = static_cast<UINT>((flags >> 16) & 0xff);
+    const bool is_right = (vk == VK_RSHIFT || sc == 0x36 || ((GetKeyState(VK_RSHIFT) & 0x8000) != 0));
+    if (!shift_state_known_) {
+        shift_keys_ = ((GetKeyState(VK_LSHIFT) & 0x8000) ? 1u : 0u)
+                    | ((GetKeyState(VK_RSHIFT) & 0x8000) ? 2u : 0u);
+        shift_state_known_ = true;
+    }
+    const unsigned side = is_right ? 2u : 1u;
+    if (down) shift_keys_ |= side;
+    else shift_keys_ &= ~side;
+}
+
 EimeTextService::KeyInput EimeTextService::capture_key(WPARAM vk, LPARAM flags) const {
     const auto down = [](int key) { return (GetKeyState(key) & 0x8000) != 0; };
+    bool ctrl_down  = (ctrl_state_known_ && ctrl_keys_ != 0) || down(VK_CONTROL) || down(VK_LCONTROL) || down(VK_RCONTROL);
+    bool shift_down = (shift_state_known_ && shift_keys_ != 0) || down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT);
+    bool is_rctrl   = (ctrl_state_known_ && (ctrl_keys_ & 2u)) || down(VK_RCONTROL);
+    bool is_rshift  = (shift_state_known_ && (shift_keys_ & 2u)) || down(VK_RSHIFT);
     return {vk, flags,
-        ctrl_state_known_ ? ctrl_keys_ != 0 : down(VK_CONTROL) || down(VK_LCONTROL) || down(VK_RCONTROL),
-        down(VK_SHIFT) || down(VK_LSHIFT) || down(VK_RSHIFT),
+        ctrl_down,
+        shift_down,
         down(VK_MENU) || down(VK_LMENU) || down(VK_RMENU),
-        printable_key(vk, flags)};
+        printable_key(vk, flags),
+        is_rctrl,
+        is_rshift};
 }
 
 bool EimeTextService::would_eat_key(const KeyInput& input) const {
@@ -285,7 +307,12 @@ bool EimeTextService::would_eat_key(const KeyInput& input) const {
                std::all_of(types, types + count, [](WORD type) { return (type & C1_PUNCT) != 0; });
     }
 
-    // 繁簡切換快捷鍵: Ctrl + Shift + F
+    // 繁簡切換快捷鍵:
+    // 1. 右 Shift + 右 Ctrl + T (繁體) / S (簡體)
+    if (input.rctrl && input.rshift && (wParam == 'T' || wParam == 't' || wParam == 'S' || wParam == 's')) {
+        return true;
+    }
+    // 2. Ctrl + Shift + F (繁簡切換)
     if (ctrl_down && shift_down && (wParam == 'F' || wParam == 'f')) {
         return true;
     }
@@ -429,6 +456,7 @@ STDMETHODIMP EimeTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPAR
     (void)pic; (void)lParam;
     if (!pfEaten) return E_INVALIDARG;
     observe_ctrl_key(wParam, lParam, true);
+    observe_shift_key(wParam, lParam, true);
     const auto input = capture_key(wParam, lParam);
     tested_key_.reset();
 
@@ -448,6 +476,7 @@ STDMETHODIMP EimeTextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM
     (void)pic; (void)lParam;
     if (!pfEaten) return E_INVALIDARG;
     observe_ctrl_key(wParam, lParam, false);
+    observe_shift_key(wParam, lParam, false);
     if (tested_key_ && tested_key_->vk == wParam) tested_key_.reset();
     if ((wParam == VK_SHIFT || wParam == VK_LSHIFT || wParam == VK_RSHIFT) && shift_pressed_alone_) {
         *pfEaten = TRUE;
@@ -460,6 +489,7 @@ STDMETHODIMP EimeTextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM
 STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (!pfEaten || !pic) return E_INVALIDARG;
     observe_ctrl_key(wParam, lParam, true);
+    observe_shift_key(wParam, lParam, true);
     // Use the modifier/text snapshot accepted by OnTestKeyDown, even if the host
     // has advanced its keyboard state before delivering OnKeyDown.
     const auto input = tested_key_ && tested_key_->vk == wParam && tested_key_->flags == lParam
@@ -484,8 +514,12 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
     bool ctrl_down  = input.ctrl;
     bool shift_down = input.shift;
 
-    // 繁簡切換快捷鍵: Ctrl + Shift + F
-    if (wParam == VK_PACKET) {
+    // 繁簡切換快捷鍵:
+    if (input.rctrl && input.rshift && (wParam == 'T' || wParam == 't')) {
+        handled = state_machine_->process_special_key(SpecialKey::CharsetTraditional, committed);
+    } else if (input.rctrl && input.rshift && (wParam == 'S' || wParam == 's')) {
+        handled = state_machine_->process_special_key(SpecialKey::CharsetSimplified, committed);
+    } else if (wParam == VK_PACKET) {
         auto text = input.text;
         if (state_machine_->mode() == InputMode::Chinese && ctrl_down && text.size() == 1) {
             if (auto punctuation = ZhuyinParser::map_chinese_punctuation(text[0])) text = *punctuation;
@@ -554,6 +588,7 @@ STDMETHODIMP EimeTextService::OnKeyUp(ITfContext* pic, WPARAM wParam, LPARAM lPa
     (void)lParam;
     if (!pfEaten) return E_INVALIDARG;
     observe_ctrl_key(wParam, lParam, false);
+    observe_shift_key(wParam, lParam, false);
     if (tested_key_ && tested_key_->vk == wParam) tested_key_.reset();
 
     if ((wParam == VK_SHIFT || wParam == VK_LSHIFT || wParam == VK_RSHIFT) && shift_pressed_alone_) {

@@ -266,6 +266,47 @@ int wmain(int argc, wchar_t** argv) {
     expected += L"你abcxyz";
     context->flush_edits();
     CHECK(context->range()->current_text() == expected);
+
+    // Test Right Shift + Right Ctrl + S (Simplified) and Right Shift + Right Ctrl + T (Traditional)
+    {
+        CHECK(SUCCEEDED(shift_toggle(sink, context))); // ensure Chinese mode
+        BYTE state[256] = {};
+        state[VK_RCONTROL] = 0x80;
+        state[VK_RSHIFT] = 0x80;
+        state[VK_CONTROL] = 0x80;
+        state[VK_SHIFT] = 0x80;
+        SetKeyboardState(state);
+        BOOL eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnTestKeyDown(context, 'S', 0, &eaten)) && eaten);
+        eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnKeyDown(context, 'S', 0, &eaten)) && eaten);
+        ZeroMemory(state, sizeof(state));
+        SetKeyboardState(state);
+
+        CHECK(SUCCEEDED(type(sink, context, "wu3\r")));
+        expected += L"体";
+        context->flush_edits();
+        CHECK(context->range()->current_text() == expected);
+
+        // Switch back to Traditional with Right Shift + Right Ctrl + T
+        state[VK_RCONTROL] = 0x80;
+        state[VK_RSHIFT] = 0x80;
+        state[VK_CONTROL] = 0x80;
+        state[VK_SHIFT] = 0x80;
+        SetKeyboardState(state);
+        eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnTestKeyDown(context, 'T', 0, &eaten)) && eaten);
+        eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnKeyDown(context, 'T', 0, &eaten)) && eaten);
+        ZeroMemory(state, sizeof(state));
+        SetKeyboardState(state);
+
+        CHECK(SUCCEEDED(type(sink, context, "wu3\r")));
+        expected += L"體";
+        context->flush_edits();
+        CHECK(context->range()->current_text() == expected);
+    }
+
     CHECK(SUCCEEDED(tip->Deactivate()));
     tip->Release(); context->Release(); mgr->Release();
     CHECK(unload() == S_OK);
