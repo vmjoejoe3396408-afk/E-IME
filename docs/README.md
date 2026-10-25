@@ -12,7 +12,7 @@
 | 理解資料流、解碼及部署 | [系統架構](ARCHITECTURE.md) |
 | 查看變更與待辦 | [更新紀錄](CHANGELOG.md)、[研發紀錄與路線](PROCESS_AND_ROADMAP.md) |
 | 確認測試覆蓋與歷史證據 | [測試索引](../testbench/README.md) |
-| 確認來源及授權 | [獨立實作紀錄](CLEANROOM_COMPLIANCE_AUDIT.md)、[第三方聲明](../THIRD_PARTY_NOTICES.md) |
+| 確認實作依據、來源及授權 | [實作與來源紀錄](IMPLEMENTATION_PROVENANCE.md)、[第三方聲明](../THIRD_PARTY_NOTICES.md) |
 
 ## 功能分支與主線的差異
 
