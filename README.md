@@ -2,7 +2,7 @@
 
 **本專案的全部程式碼均由 AI 生成。作者沒有手寫任何一行程式碼，僅指示 AI 生成。**
 
-以 C++20 開發的 Windows 注音輸入法，保留微軟注音使用者熟悉的整句組字、回頭選字與中英切換方式，讓詞庫、選字規則及候選窗可以自行維護。
+**E-IME 是微軟注音的模仿品。** 目標是重現它的整句組字、回頭選字與中英切換操作，再加入可編輯詞庫、四欄候選與繁簡切換。使用 C++20 與 Windows TSF 實作。
 
 [![Windows CI](https://github.com/vmjoejoe3396408-afk/E-IME/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/vmjoejoe3396408-afk/E-IME/actions/workflows/ci.yml)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](CMakeLists.txt)
@@ -23,7 +23,7 @@
 
 ## 想改善什麼
 
-設計出發點是沿用熟悉的注音操作，再改善日常使用中想自己調整、卻不容易處理的部分。
+以微軟注音為模仿對象，先做出接近的操作，再調整詞庫、候選布局和快速輸入容錯。
 
 | 使用痛點 | E-IME 的做法 |
 | --- | --- |
@@ -34,7 +34,7 @@
 | 快速打字時聲韻或聲調落鍵順序錯亂 | 支援聲韻槽位重排；目前版本另對尚無詞庫匹配的已結音音節，嘗試補入晚到的介音或韻母。 |
 | 某些按鍵行為或輸入 bug 需要自行修正 | 本專案程式碼採 MIT 授權，可重建 DLL、執行測試並用版本目錄部署。詞庫與映射資料另依第三方授權分發。 |
 
-E-IME 參考注音使用需求與操作行為進行實作，系統整合使用公開的 TSF／Win32 API；詞庫及繁簡字元映射來自開源專案。目前開發紀錄未建立可供核對的正式淨室隔離流程，因此不以「淨室開發」描述本專案。實作依據、資料來源及紀錄範圍見 [實作與來源紀錄](docs/IMPLEMENTATION_PROVENANCE.md) 及 [第三方聲明](THIRD_PARTY_NOTICES.md)。
+模仿對象是微軟注音的操作與介面行為。系統整合使用公開的 TSF／Win32 API，詞庫及繁簡字元映射來自開源專案。實作依據與資料來源見 [實作與來源紀錄](docs/IMPLEMENTATION_PROVENANCE.md) 及 [第三方聲明](THIRD_PARTY_NOTICES.md)。
 
 ## 建置與安裝
 
