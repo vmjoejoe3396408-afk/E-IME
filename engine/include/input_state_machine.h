@@ -19,9 +19,7 @@
 namespace eime {
 
 inline void ring_bell() {
-#ifdef _WIN32
-    ::MessageBeep(0xFFFFFFFF);
-#endif
+    // 預設靜音：避免打字錯誤或按鍵衝突時持續發出系統蜂鳴聲吵到使用者
 }
 
 enum class InputMode {
@@ -45,7 +43,9 @@ enum class SpecialKey {
     PageUp,
     PageDown,
     ShiftToggle,
-    CharsetToggle,  // 繁簡切換 (Ctrl + Shift + F)
+    CharsetToggle,        // 繁簡切換 (Ctrl + Shift + F)
+    CharsetTraditional,   // 切換為繁體 (右 Shift + 右 Ctrl + T)
+    CharsetSimplified,    // 切換為簡體 (右 Shift + 右 Ctrl + S)
     Backspace,
     DeleteKey,
     Enter,
@@ -106,11 +106,22 @@ public:
         return offset;
     }
 
-    // 取得當前頁面的候選字清單 (最多 9 個，若為簡體模式自動轉換輸出顯示)
+    bool is_expanded() const { return is_expanded_; }
+    size_t candidates_per_page() const { return is_expanded_ ? 36 : 9; }
+
+    bool is_slot_pinned(size_t slot) const {
+        for (const auto& p : pins_) {
+            if (slot >= p.start_syllable_idx && slot < p.start_syllable_idx + p.length) return true;
+        }
+        return false;
+    }
+
+    // 取得當前頁面的候選字清單 (未展開 9 個，展開模式 18 個雙欄，若為簡體模式自動轉換輸出顯示)
     std::vector<WordCandidate> current_page_candidates() const {
         std::vector<WordCandidate> page;
-        size_t start = candidate_page_ * CANDIDATES_PER_PAGE;
-        for (size_t i = start; i < std::min(candidates_.size(), start + CANDIDATES_PER_PAGE); ++i) {
+        size_t per_page = candidates_per_page();
+        size_t start = candidate_page_ * per_page;
+        for (size_t i = start; i < std::min(candidates_.size(), start + per_page); ++i) {
             auto cand = candidates_[i];
             if (charset_ == OutputCharset::Simplified) {
                 cand.text = HanziConverter::to_simplified(cand.text);
@@ -122,7 +133,8 @@ public:
 
     size_t total_candidate_pages() const {
         if (candidates_.empty()) return 0;
-        return (candidates_.size() + CANDIDATES_PER_PAGE - 1) / CANDIDATES_PER_PAGE;
+        size_t per_page = candidates_per_page();
+        return (candidates_.size() + per_page - 1) / per_page;
     }
 
     // 切換繁體/簡體中文輸出模式 (Ctrl + Shift + F)
@@ -166,6 +178,18 @@ public:
             return true;
         }
 
+        if (key == SpecialKey::CharsetTraditional) {
+            set_charset(OutputCharset::Traditional);
+            update_viterbi();
+            return true;
+        }
+
+        if (key == SpecialKey::CharsetSimplified) {
+            set_charset(OutputCharset::Simplified);
+            update_viterbi();
+            return true;
+        }
+
         if (state_ == EngineState::Idle) {
             return false;
         }
@@ -186,30 +210,119 @@ public:
         if (state_ == EngineState::CandidateOpen) {
             auto page_cands = current_page_candidates();
             switch (key) {
-                case SpecialKey::DownArrow:
+                case SpecialKey::DownArrow: {
+                    if (is_expanded_) {
+                        size_t col = selected_in_page_ / 9;
+                        size_t col_start = col * 9;
+                        size_t col_end = std::min(col_start + 9, page_cands.size());
+                        if (selected_in_page_ + 1 < col_end) {
+                            selected_in_page_++;
+                        } else {
+                            selected_in_page_ = col_start;
+                        }
+                    } else {
+                        if (selected_in_page_ + 1 < page_cands.size()) {
+                            selected_in_page_++;
+                        } else {
+                            size_t total_pages = total_candidate_pages();
+                            if (total_pages > 1) {
+                                candidate_page_ = (candidate_page_ + 1) % total_pages;
+                            }
+                            selected_in_page_ = 0;
+                        }
+                    }
+                    return true;
+                }
+                case SpecialKey::UpArrow: {
+                    if (is_expanded_) {
+                        size_t col = selected_in_page_ / 9;
+                        size_t col_start = col * 9;
+                        size_t col_end = std::min(col_start + 9, page_cands.size());
+                        if (selected_in_page_ > col_start) {
+                            selected_in_page_--;
+                        } else {
+                            selected_in_page_ = (col_end > col_start) ? (col_end - 1) : col_start;
+                        }
+                    } else {
+                        if (selected_in_page_ > 0) {
+                            selected_in_page_--;
+                        } else {
+                            size_t total_pages = total_candidate_pages();
+                            if (total_pages > 1) {
+                                candidate_page_ = (candidate_page_ + total_pages - 1) % total_pages;
+                            }
+                            auto prev_cands = current_page_candidates();
+                            selected_in_page_ = prev_cands.empty() ? 0 : prev_cands.size() - 1;
+                        }
+                    }
+                    return true;
+                }
                 case SpecialKey::RightArrow: {
-                    if (selected_in_page_ + 1 < page_cands.size()) {
-                        selected_in_page_++;
+                    if (!is_expanded_) {
+                        if (candidates_.size() > 9) {
+                            is_expanded_ = true;
+                            auto exp_cands = current_page_candidates();
+                            size_t target = (selected_in_page_ % 9) + 9;
+                            if (target < exp_cands.size()) {
+                                selected_in_page_ = target;
+                            } else if (exp_cands.size() > 9) {
+                                selected_in_page_ = exp_cands.size() - 1;
+                            }
+                        }
+                        return true;
+                    }
+                    // 已展開模式：4 欄橫向切換
+                    size_t cur_col = selected_in_page_ / 9;
+                    size_t row = selected_in_page_ % 9;
+                    if (cur_col < 3) {
+                        size_t next_col = cur_col + 1;
+                        size_t target = next_col * 9 + row;
+                        if (target < page_cands.size()) {
+                            selected_in_page_ = target;
+                        } else if (next_col * 9 < page_cands.size()) {
+                            selected_in_page_ = page_cands.size() - 1;
+                        } else {
+                            size_t total_pages = total_candidate_pages();
+                            if (total_pages > 1) {
+                                candidate_page_ = (candidate_page_ + 1) % total_pages;
+                                selected_in_page_ = 0;
+                            }
+                        }
                     } else {
                         size_t total_pages = total_candidate_pages();
                         if (total_pages > 1) {
                             candidate_page_ = (candidate_page_ + 1) % total_pages;
+                            auto next_cands = current_page_candidates();
+                            selected_in_page_ = std::min(row, next_cands.empty() ? 0 : next_cands.size() - 1);
                         }
-                        selected_in_page_ = 0;
                     }
                     return true;
                 }
-                case SpecialKey::UpArrow:
                 case SpecialKey::LeftArrow: {
-                    if (selected_in_page_ > 0) {
-                        selected_in_page_--;
-                    } else {
-                        size_t total_pages = total_candidate_pages();
-                        if (total_pages > 1) {
-                            candidate_page_ = (candidate_page_ + total_pages - 1) % total_pages;
+                    if (!is_expanded_) {
+                        if (candidate_page_ > 0) {
+                            candidate_page_--;
+                            selected_in_page_ = 0;
                         }
-                        auto prev_cands = current_page_candidates();
-                        selected_in_page_ = prev_cands.empty() ? 0 : prev_cands.size() - 1;
+                        return true;
+                    }
+                    // 已展開模式：4 欄橫向切換
+                    size_t cur_col = selected_in_page_ / 9;
+                    size_t row = selected_in_page_ % 9;
+                    if (cur_col > 0) {
+                        size_t prev_col = cur_col - 1;
+                        selected_in_page_ = prev_col * 9 + row;
+                    } else {
+                        if (candidate_page_ > 0) {
+                            candidate_page_--;
+                            auto prev_cands = current_page_candidates();
+                            size_t last_col = prev_cands.empty() ? 0 : (prev_cands.size() - 1) / 9;
+                            size_t target = last_col * 9 + row;
+                            selected_in_page_ = std::min(target, prev_cands.empty() ? 0 : prev_cands.size() - 1);
+                        } else {
+                            is_expanded_ = false;
+                            selected_in_page_ = row;
+                        }
                     }
                     return true;
                 }
@@ -331,7 +444,8 @@ public:
         // 1. 選字清單展開狀態
         if (state_ == EngineState::CandidateOpen) {
             if (c >= '1' && c <= '9') {
-                size_t idx = static_cast<size_t>(c - '1');
+                size_t base = is_expanded_ ? (selected_in_page_ / 9) * 9 : 0;
+                size_t idx = base + static_cast<size_t>(c - '1');
                 if (select_candidate_in_current_page(idx)) {
                     return true;
                 }
@@ -355,7 +469,19 @@ public:
             return process_special_key(SpecialKey::Backspace, out_commit_text);
         }
 
-        // 3. 支援在中文組字或空閒時直接打 `[` 與 `]` 輸出「」引號
+        // 3. 支援前導符號鍵 (`) 與直接引號 [`] / [\]
+        if (leader_punct_) {
+            leader_punct_ = false;
+            if (c == '`' || c == '~') return process_literal("`", out_commit_text);
+            auto punct = ZhuyinParser::map_chinese_punctuation(c);
+            if (punct.has_value()) {
+                return process_literal(punct.value(), out_commit_text);
+            }
+        } else if (c == '`') {
+            leader_punct_ = true;
+            return true;
+        }
+
         if (c == '[' || c == ']') {
             auto punct = ZhuyinParser::map_chinese_punctuation(c);
             if (punct.has_value()) {
@@ -385,6 +511,17 @@ public:
                 } else if (c == ' ' && !committed_syllables_.empty()) {
                     return process_literal(" ", out_commit_text);
                 } else if (c != ' ') {
+                    // 若當前音節為空，但游標前有音節：支援重複按聲調或修正聲調！
+                    if (cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
+                        !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
+                        auto& prev = committed_syllables_[cursor_idx_ - 1];
+                        if (prev.tone != km.tone) {
+                            prev.tone = km.tone;
+                            update_viterbi();
+                        }
+                        state_ = EngineState::Composing;
+                        return true;
+                    }
                     // 空音節按下聲調鍵 (3:ˇ, 4:ˋ, 6:ˊ, 7:˙) -> 視為無效按鍵，響鈴並攔截 (符合微軟新注音規範)
                     ring_bell();
                     return true;
@@ -417,6 +554,22 @@ public:
 
             // 介音 (ㄧㄨㄩ)
             if (km.category == ZhuyinParser::KeyMapping::Category::Medial) {
+                // 激進修正：若音調按早了 (例如 ㄉ + ˋ + ㄧ -> ㄉㄧˋ)，吸收介音至前一音節
+                // 注意：只有在前一音節不是有效音節時才允許補全，絕對不可破壞已完成的有效單字（如 ㄘˋ 次）
+                if (current_syllable_.is_empty() && cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
+                    !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
+                    auto& prev = committed_syllables_[cursor_idx_ - 1];
+                    if (prev.tone != Tone::None && prev.medial.empty() && prev.rhyme.empty()) {
+                        Syllable test_syl = prev;
+                        test_syl.medial = km.symbol;
+                        if (trie_.lookup_exact({prev}).empty() && !trie_.lookup_exact({test_syl}).empty()) {
+                            prev.medial = km.symbol;
+                            update_viterbi();
+                            state_ = EngineState::Composing;
+                            return true;
+                        }
+                    }
+                }
                 // 一個音節僅能有一個介音；若已存在介音，直接拒絕並響鈴
                 if (!current_syllable_.medial.empty()) {
                     ring_bell();
@@ -430,6 +583,22 @@ public:
 
             // 韻母 (13)
             if (km.category == ZhuyinParser::KeyMapping::Category::Rhyme) {
+                // 激進修正：若音調按早了 (例如 ㄉ + ˋ + ㄠ -> ㄉㄠˋ)，吸收韻母至前一音節
+                // 注意：只有在前一音節不是有效音節時才允許補全，絕對不可破壞已完成的有效單字（如 ㄘˋ 次）
+                if (current_syllable_.is_empty() && cursor_idx_ > 0 && cursor_idx_ <= committed_syllables_.size() &&
+                    !is_slot_pinned(cursor_idx_ - 1) && literal_texts_[cursor_idx_ - 1].empty()) {
+                    auto& prev = committed_syllables_[cursor_idx_ - 1];
+                    if (prev.tone != Tone::None && prev.rhyme.empty()) {
+                        Syllable test_syl = prev;
+                        test_syl.rhyme = km.symbol;
+                        if (trie_.lookup_exact({prev}).empty() && !trie_.lookup_exact({test_syl}).empty()) {
+                            prev.rhyme = km.symbol;
+                            update_viterbi();
+                            state_ = EngineState::Composing;
+                            return true;
+                        }
+                    }
+                }
                 // 一個音節僅能有一個韻母；若已存在韻母，直接拒絕並響鈴
                 if (!current_syllable_.rhyme.empty()) {
                     ring_bell();
@@ -500,6 +669,7 @@ public:
         candidate_target_idx_ = 0;
         candidate_page_ = 0;
         selected_in_page_ = 0;
+        is_expanded_ = false;
     }
 
 private:
@@ -527,6 +697,8 @@ private:
     size_t candidate_target_idx_;
     size_t candidate_page_;
     size_t selected_in_page_;
+    bool is_expanded_ = false;
+    bool leader_punct_ = false;
 
     void insert_completed_syllable(const Syllable& s) {
         // 若在鎖定區段內部插入音節/符號，移除該鎖定避免索引錯亂
@@ -619,12 +791,14 @@ private:
         if (!candidates_.empty()) {
             candidate_page_ = 0;
             selected_in_page_ = 0;
+            is_expanded_ = false;
             state_ = EngineState::CandidateOpen;
         }
     }
 
     bool select_candidate_in_current_page(size_t index_in_page) {
-        size_t global_idx = candidate_page_ * CANDIDATES_PER_PAGE + index_in_page;
+        size_t per_page = candidates_per_page();
+        size_t global_idx = candidate_page_ * per_page + index_in_page;
         if (global_idx >= candidates_.size()) return false;
 
         const auto chosen = candidates_[global_idx];
@@ -673,6 +847,7 @@ private:
 
         // Choosing only pins the word; keep the composition editable for reselection.
         // Enter in Composing is the separate, explicit document commit.
+        is_expanded_ = false;
         cursor_idx_ = std::min(committed_syllables_.size(), pin_end);
         state_ = EngineState::Composing;
         return true;

@@ -233,6 +233,56 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(SUCCEEDED(shift_toggle(sink, context)));
     }
 
+    // Ctrl+Shift+; inserts fullwidth colon L"：" while Ctrl+; inserts fullwidth semicolon L"；"
+    // and consecutive typing 次 (h4) + 我 (ji3) does not turn 次 into 促
+    {
+        const auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_1, true, true)));
+        CHECK(context->range()->current_text() == prefix + L"：");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_1, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        CHECK(SUCCEEDED(type(sink, context, "h4ji3\r")));
+        CHECK(context->range()->current_text() == prefix + L"：；次我");
+
+        // Test comma in various conditions:
+        // A. Idle Ctrl+,
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // B. Idle Shift+,
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, false, true)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // C. Leader key ` then ,
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_3)));
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // D. Composing then Ctrl+,
+        CHECK(SUCCEEDED(type(sink, context, "su3"))); // 你
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，你，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // E. Composing then Shift+,
+        CHECK(SUCCEEDED(type(sink, context, "cl3"))); // 好
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, false, true)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，你，好，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+
+        // F. Single syllable 次 (h4) without enter, then Ctrl+,
+        CHECK(SUCCEEDED(type(sink, context, "h4"))); // 次
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_COMMA, true, false)));
+        CHECK(context->range()->current_text() == prefix + L"：；次我，，，你，好，次，");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+    }
+
     // MS-IME typo phonotactic permutation ('k' ㄜ + '2' ㄉ -> 'ㄉㄜ', + '7' -> '的')
     CHECK(SUCCEEDED(type(sink, context, "k"))); // ㄜ
     CHECK(SUCCEEDED(type(sink, context, "2"))); // ㄉ -> reorders to ㄉㄜ
@@ -266,6 +316,47 @@ int wmain(int argc, wchar_t** argv) {
     expected += L"你abcxyz";
     context->flush_edits();
     CHECK(context->range()->current_text() == expected);
+
+    // Test Right Shift + Right Ctrl + S (Simplified) and Right Shift + Right Ctrl + T (Traditional)
+    {
+        CHECK(SUCCEEDED(shift_toggle(sink, context))); // ensure Chinese mode
+        BYTE state[256] = {};
+        state[VK_RCONTROL] = 0x80;
+        state[VK_RSHIFT] = 0x80;
+        state[VK_CONTROL] = 0x80;
+        state[VK_SHIFT] = 0x80;
+        SetKeyboardState(state);
+        BOOL eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnTestKeyDown(context, 'S', 0, &eaten)) && eaten);
+        eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnKeyDown(context, 'S', 0, &eaten)) && eaten);
+        ZeroMemory(state, sizeof(state));
+        SetKeyboardState(state);
+
+        CHECK(SUCCEEDED(type(sink, context, "wu3\r")));
+        expected += L"体";
+        context->flush_edits();
+        CHECK(context->range()->current_text() == expected);
+
+        // Switch back to Traditional with Right Shift + Right Ctrl + T
+        state[VK_RCONTROL] = 0x80;
+        state[VK_RSHIFT] = 0x80;
+        state[VK_CONTROL] = 0x80;
+        state[VK_SHIFT] = 0x80;
+        SetKeyboardState(state);
+        eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnTestKeyDown(context, 'T', 0, &eaten)) && eaten);
+        eaten = FALSE;
+        CHECK(SUCCEEDED(sink->OnKeyDown(context, 'T', 0, &eaten)) && eaten);
+        ZeroMemory(state, sizeof(state));
+        SetKeyboardState(state);
+
+        CHECK(SUCCEEDED(type(sink, context, "wu3\r")));
+        expected += L"體";
+        context->flush_edits();
+        CHECK(context->range()->current_text() == expected);
+    }
+
     CHECK(SUCCEEDED(tip->Deactivate()));
     tip->Release(); context->Release(); mgr->Release();
     CHECK(unload() == S_OK);

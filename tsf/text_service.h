@@ -102,10 +102,14 @@ private:
         bool shift;
         bool alt;
         std::string text;
+        bool rctrl = false;
+        bool rshift = false;
     };
     std::optional<KeyInput> tested_key_;
     unsigned ctrl_keys_ = 0;
     bool ctrl_state_known_ = false;
+    unsigned shift_keys_ = 0;
+    bool shift_state_known_ = false;
 
     void initialize_engine_resources();
     void end_composition(TfEditCookie ec);
@@ -114,6 +118,7 @@ private:
     void execute_edit_session(TfEditCookie ec, ITfContext* context, const EditSnapshot& snapshot);
     static std::string printable_key(WPARAM vk, LPARAM lParam);
     void observe_ctrl_key(WPARAM vk, LPARAM flags, bool down);
+    void observe_shift_key(WPARAM vk, LPARAM flags, bool down);
     KeyInput capture_key(WPARAM vk, LPARAM flags) const;
     bool would_eat_key(const KeyInput& input) const;
     void update_ui(const POINT& caret_pt, const EditSnapshot& snapshot);

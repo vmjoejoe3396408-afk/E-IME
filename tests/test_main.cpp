@@ -268,12 +268,12 @@ bool test_tsf_com_dll() {
     ITfDisplayAttributeInfo* info = nullptr;
     ULONG fetched = 0;
     hr = pEnum->Next(1, &info, &fetched);
-    EIME_ASSERT(SUCCEEDED(hr) && fetched == 1 && info != nullptr, "應能取得第 1 個 DisplayAttributeInfo (Input 虛線)");
+    EIME_ASSERT(SUCCEEDED(hr) && fetched == 1 && info != nullptr, "應能取得第 1 個 DisplayAttributeInfo (Input 實線)");
 
     std::cout << "[DEBUG 6] GetAttributeInfo..." << std::endl;
     TF_DISPLAYATTRIBUTE da = {};
     info->GetAttributeInfo(&da);
-    EIME_ASSERT(da.lsStyle == TF_LS_DOT, "組字底線樣式應為虛線 (TF_LS_DOT)");
+    EIME_ASSERT(da.lsStyle == TF_LS_SOLID, "組字底線樣式應為實線 (TF_LS_SOLID)");
 
     std::cout << "[DEBUG 7] Releases..." << std::endl;
     info->Release();
@@ -436,13 +436,14 @@ bool test_polyphone_and_candidate_navigation(eime::ZhuyinTrie& trie, const eime:
     auto cands = sm.current_page_candidates();
     EIME_ASSERT(!cands.empty() && cands[0].text == "些", "第 1 候選字應為『些』");
 
-    // 3. 方向鍵 [→] 向右選字
+    // 3. 方向鍵 [→] 展開雙欄選字表並切換至右欄
     sm.process_special_key(eime::SpecialKey::RightArrow, out);
-    EIME_ASSERT(sm.selected_in_page() == 1, "按 [→] 應高亮第 2 項");
+    EIME_ASSERT(sm.is_expanded(), "按 [→] 應展開為雙欄多頁選字表");
+    EIME_ASSERT(sm.selected_in_page() >= 9, "按 [→] 應切換至右欄");
 
-    // 4. 方向鍵 [←] 向左選字
+    // 4. 方向鍵 [←] 向左切換回左欄
     sm.process_special_key(eime::SpecialKey::LeftArrow, out);
-    EIME_ASSERT(sm.selected_in_page() == 0, "按 [←] 應回到第 1 項");
+    EIME_ASSERT(sm.selected_in_page() == 0, "按 [←] 應回到左欄第 1 項");
 
     // 5. 候選窗內 Enter 只確認選字，組字中的 Enter 才送出
     sm.process_special_key(eime::SpecialKey::Enter, out);
@@ -680,6 +681,144 @@ bool test_candidate_reselection() {
     return true;
 }
 
+bool test_aggressive_correction(eime::ZhuyinTrie& trie, const eime::ViterbiDecoder& decoder) {
+    std::cout << "[TEST 14] 驗證激進修正：早按聲調 (ㄉˋㄠ -> ㄉㄠˋ)、左右鍵選字欄位切換與等號字元組字..." << std::endl;
+    eime::InputStateMachine sm(trie, decoder);
+    std::string out;
+
+    // 1. 驗證早按聲調自動重組：2 (ㄉ) + 4 (ˋ) + l (ㄠ) -> 自動組合成「倒」或「到」
+    sm.reset();
+    sm.process_key('2', out); // ㄉ
+    sm.process_key('4', out); // ˋ (提早按了四聲)
+    sm.process_key('l', out); // ㄠ (韻母到來)
+    EIME_ASSERT(sm.composition_text() == "到" || sm.composition_text() == "倒", "早按聲調輸入 ㄉ+ˋ+ㄠ 應自動重組成 ㄉㄠˋ 並選出『到』或『倒』，實際為: " + sm.composition_text());
+
+    // 2. 驗證已完成的有效音節（如 ㄘˋ 次）決不會被後續的介音吸收變成「促」
+    sm.reset();
+    sm.process_key('h', out); // ㄘ
+    sm.process_key('4', out); // ˋ -> 次
+    EIME_ASSERT(sm.composition_text() == "次", "輸入 ㄘ+ˋ 應為『次』，實際為: " + sm.composition_text());
+    sm.process_key('j', out); // ㄨ (介音，開始輸入下一個字「我」)
+    EIME_ASSERT(sm.composition_text() == "次", "輸入 ㄨ 決不可吞噬前字變成『促』，組字文字應保留『次』，實際為: " + sm.composition_text());
+    EIME_ASSERT(sm.get_display_line_with_cursor() == "次[ㄨ]", "組字行應顯示為 次[ㄨ]，實際為: " + sm.get_display_line_with_cursor());
+    sm.process_key('i', out); // ㄛ
+    sm.process_key('3', out); // ˇ -> 我
+    EIME_ASSERT(sm.composition_text() == "次我", "連續輸入 ㄘˋ ㄨㄛˇ 應輸出『次我』，實際為: " + sm.composition_text());
+
+    // 3. 驗證候選字窗展開與左右欄位切換
+    sm.reset();
+    for (char c : std::string("vu, ")) sm.process_key(c, out); // 些 (候選字 > 9 個)
+    sm.process_special_key(eime::SpecialKey::DownArrow, out); // 展開選字窗
+    EIME_ASSERT(sm.state() == eime::EngineState::CandidateOpen, "應進入 CandidateOpen 狀態");
+    EIME_ASSERT(!sm.is_expanded(), "初始應為單欄");
+    
+    // 按右方向鍵展開雙欄多頁選字表，並切換到右欄
+    sm.process_special_key(eime::SpecialKey::RightArrow, out);
+    EIME_ASSERT(sm.is_expanded(), "按右鍵後應展開為雙欄多頁選字表");
+    EIME_ASSERT(sm.selected_in_page() >= 9, "按右鍵後應選中右欄候選字");
+
+    // 再按左方向鍵切換回左欄
+    sm.process_special_key(eime::SpecialKey::LeftArrow, out);
+    EIME_ASSERT(sm.selected_in_page() < 9, "按左鍵後應切換回左欄候選字");
+
+    // 4. 驗證等號 (=) 與字元在組字區內
+    sm.reset();
+    for (char c : std::string("2l4")) sm.process_key(c, out); // 到 / 倒
+    sm.process_literal("=", out);
+    EIME_ASSERT(sm.composition_text() == "到=" || sm.composition_text() == "倒=", "組字中輸入 = 應納入組字底線內部，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Backspace, out);
+    EIME_ASSERT(sm.composition_text() == "到" || sm.composition_text() == "倒", "按 Backspace 應刪除 =，實際為: " + sm.composition_text());
+
+    // 5. 驗證右 Ctrl + 右 Shift 繁簡獨立快捷鍵：S (切換簡體) 與 T (切換繁體)
+    sm.reset();
+    sm.process_special_key(eime::SpecialKey::CharsetSimplified, out);
+    EIME_ASSERT(sm.charset() == eime::OutputCharset::Simplified, "按右 Shift+Ctrl+S 應切換為簡體模式");
+    sm.process_special_key(eime::SpecialKey::CharsetTraditional, out);
+    EIME_ASSERT(sm.charset() == eime::OutputCharset::Traditional, "按右 Shift+Ctrl+T 應切換為繁體模式");
+
+    std::cout << "  -> [PASS] 激進修正、左右選字切換與右側繁簡快捷鍵驗證通過" << std::endl;
+    return true;
+}
+
+bool test_four_column_and_leader_comma(eime::ZhuyinTrie& trie, const eime::ViterbiDecoder& decoder) {
+    std::cout << "[Test 15] 四欄位選字導航與標點符號/前導鍵輸入測試..." << std::endl;
+    eime::InputStateMachine sm(trie, decoder);
+    std::string out;
+
+    // 1. 測試前導鍵 ` + 逗號/句號/問號
+    sm.process_key('`', out);
+    sm.process_key(',', out);
+    EIME_ASSERT(sm.composition_text() == "，", "前導鍵 ` + , 組字區應呈現全形逗號『，』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "，", "按 Enter 應輸出全形逗號『，』");
+
+    out.clear();
+    sm.process_key('`', out);
+    sm.process_key('.', out);
+    EIME_ASSERT(sm.composition_text() == "。", "前導鍵 ` + . 組字區應呈現全形句號『。』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "。", "按 Enter 應輸出全形句號『。』");
+
+    out.clear();
+    sm.process_key('`', out);
+    sm.process_key('/', out);
+    EIME_ASSERT(sm.composition_text() == "？", "前導鍵 ` + / 組字區應呈現全形問號『？』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "？", "按 Enter 應輸出全形問號『？』");
+
+    // 2. 測試 Ctrl 標點符號快捷鍵 (Ctrl+, -> ，, Ctrl+; -> ；, Ctrl+Shift+; / Ctrl+: -> ：)
+    out.clear();
+    sm.process_ctrl_punctuation(',', out);
+    EIME_ASSERT(sm.composition_text() == "，", "Ctrl+, 組字區應呈現『，』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "，", "按 Enter 應輸出『，』");
+
+    out.clear();
+    sm.process_ctrl_punctuation(';', out);
+    EIME_ASSERT(sm.composition_text() == "；", "Ctrl+; 組字區應呈現『；』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "；", "按 Enter 應輸出『；』");
+
+    out.clear();
+    sm.process_ctrl_punctuation(':', out);
+    EIME_ASSERT(sm.composition_text() == "：", "Ctrl+Shift+; (Ctrl+:) 組字區應呈現『：』，實際為: " + sm.composition_text());
+    sm.process_special_key(eime::SpecialKey::Enter, out);
+    EIME_ASSERT(out == "：", "按 Enter 應輸出『：』");
+
+    // 3. 測試 4 欄位展開 (candidates_per_page == 36)
+    sm.reset();
+    out.clear();
+    for (char c : std::string("u ")) sm.process_key(c, out);
+    sm.process_special_key(eime::SpecialKey::DownArrow, out);
+    EIME_ASSERT(sm.state() == eime::EngineState::CandidateOpen, "應進入選字狀態");
+    EIME_ASSERT(!sm.is_expanded(), "未按右方向鍵前應為單欄 (9 個)");
+    EIME_ASSERT(sm.candidates_per_page() == 9, "未展開時每頁 9 個");
+
+    // 按向右方向鍵展開為 4 欄位 (每頁 36 個)
+    sm.process_special_key(eime::SpecialKey::RightArrow, out);
+    EIME_ASSERT(sm.is_expanded(), "按右方向鍵應展開選字表");
+    EIME_ASSERT(sm.candidates_per_page() == 36, "展開後每頁應為 36 個 (4 欄位 x 9 列)");
+    EIME_ASSERT(sm.selected_in_page() >= 9, "按右鍵後游標應切換至第 2 欄 (index >= 9)");
+
+    // 欄位內垂直上下移動 (在第 2 欄 9..17 內循環)
+    size_t cur = sm.selected_in_page();
+    sm.process_special_key(eime::SpecialKey::DownArrow, out);
+    EIME_ASSERT(sm.selected_in_page() >= 9 && sm.selected_in_page() <= 17, "第 2 欄向下移動應維持在第 2 欄");
+    sm.process_special_key(eime::SpecialKey::UpArrow, out);
+    EIME_ASSERT(sm.selected_in_page() == cur, "第 2 欄向上移動應回到原位置");
+
+    // 向左方向鍵切換回第 1 欄
+    sm.process_special_key(eime::SpecialKey::LeftArrow, out);
+    EIME_ASSERT(sm.selected_in_page() < 9, "按左鍵應切換回第 1 欄 (index < 9)");
+
+    // 再次按左方向鍵應收回展開模式
+    sm.process_special_key(eime::SpecialKey::LeftArrow, out);
+    EIME_ASSERT(!sm.is_expanded(), "在第 1 欄按左鍵應收合為單欄選字表");
+
+    std::cout << "  -> [PASS] 四欄位選字導航與標點符號/前導鍵輸入測試通過" << std::endl;
+    return true;
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -713,9 +852,11 @@ int main() {
     ok = ok && test_phonotactics_typo_protection(trie, decoder);
     ok = ok && test_mid_sentence_punctuation(trie, decoder);
     ok = ok && test_candidate_reselection();
+    ok = ok && test_aggressive_correction(trie, decoder);
+    ok = ok && test_four_column_and_leader_comma(trie, decoder);
 
     if (ok) {
-        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 13 個核心測試模組通過。" << std::endl;
+        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 15 個核心測試模組通過。" << std::endl;
         return 0;
     } else {
         std::cerr << "\n[TEST FAILED] 部分測試未通過！" << std::endl;

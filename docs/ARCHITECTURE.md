@@ -1,152 +1,91 @@
-# E-IME (Enhanced IME) 系統架構與工程設計文檔
-> **全稱**：基於 MS-IME 的改進型注音輸入法 (Enhanced IME)  
-> **代號 / 命名空間**：`E-IME` (`namespace E-IME`)
+# 系統架構
 
----
+適用：主線 `master`（功能基準 `9b73ae7`）。命名空間為 `eime`，系統元件為 `eime_tip.dll`。使用行為見 [操作指南](USAGE.md)，合併前差異見 [歷史分支對照](README.md)。
 
-## 1. 專案定位與核心設計目標
-
-**E-IME** 旨在打造一套**「高度貼合微軟新注音肌肉記憶與操作直覺，並改進詞庫維護彈性、反應延遲與跨機自造詞同步機制」**的現代化 Windows 注音輸入法。
-
-### 1.1 核心必備能力 (Core Must-Haves)
-1. **貼合微軟注音肌肉記憶 (MS-IME Muscle Memory Parity)**：
-   * **整句組字 + 游標回頭改字**：支援在長句組字區（Composition Buffer）中按 `←` / `→` 移動游標、按 `↓` 展開該位置的候選字窗、按 `1`~`9` 或候選窗中的 `Enter` 局部鎖定（Pin）選字，其餘區段重新執行 Viterbi 解碼。選字後保留組字底線，單字、整詞及標點皆能再次改選；候選窗關閉後再按 `Enter` 才送出整句。空白鍵在注音未完成時輸入一聲，其餘情況插入空格，不觸發選字。
-   * **Shift 中英無縫切換**：單擊 `Shift` 切換中/英模式；組字中按 `Enter` 直接送出整句；`Backspace` 精準逐碼倒退；`Esc` 瞬間清空組字區（不干擾 Vim / IDE 操作）。
-   * **繁簡中文即時切換 (Ctrl + Shift + F)**：內建靜態 OpenCC 高效能對照表（4,148 組標準繁簡映射），切換為簡體輸出時即時以極速（< 10ns/字）轉碼上屏與預覽，候選窗同步標記 `[繁]` / `[簡]`。
-   * **智慧中英混打與全形標點**：支援 `Ctrl + ,`（，）、`Ctrl + .`（。）、以及前導引號自動配對。
-2. **極致效能與低資源佔用 (Microsecond Latency)**：
-   * 常駐記憶體 $< 10\text{MB}$，核心 DLL $< 4\text{MB}$。
-   * 單次擊鍵解碼延遲 $< 50\mu s$（$0.05\text{ms}$），避免現代輸入法常見的掉字與卡頓現象。
-3. **無鎖跨裝置雲端同步 (Zero-Lock Multi-Device Cloud Sync)**：
-   * 採用 **Per-Instance Append-Only Delta Journal (`device_<hostname>_<writer-id>.delta`)**。
-   * 多個宿主及裝置指向同一個私人同步資料夾時，各實例只寫自己的增量檔；讀取時比對每檔各詞的累計值，只套用增加部分。檔案傳輸由外部雲端硬碟負責，真實跨機傳輸尚未驗證。不要將含私人學習紀錄的資料夾發布到 Git。
-4. **現代台灣繁體語料庫 + 純文字即時擴充**：
-   * 內建現代台灣常用詞、科技詞彙、網路用語，並支援 `custom_words.txt` 純文字自訂詞庫。
-
----
-
-## 2. 系統總體架構圖 (System Architecture)
+## 模組與資料流
 
 ```mermaid
-graph TD
-    subgraph HostApp ["外部宿主應用程式 (Host Application)"]
-        Win32["傳統 Win32 (記事本 / Office Word)"]
-        Chromium["Chromium / Electron (Chrome / VS Code / Discord)"]
-        UWP["UWP / Windows 11 現代沙盒應用"]
-    end
-
-    subgraph TSF_Layer ["1. 系統外殼層 (Windows TSF COM Server - E-IME_tsf.dll)"]
-        Factory["IClassFactory & DllRegisterServer"]
-        TIP["ITfTextInputProcessorEx (輸入法生命週期)"]
-        KeySink["ITfKeyEventSink (OnTestKeyDown / OnKeyDown)"]
-        EditSession["ITfEditSession (非同步讀寫宿主組字區 & 游標定位)"]
-    end
-
-    subgraph State_Layer ["2. 鍵盤與組字狀態機 (InputStateMachine)"]
-        ModeMgr["中英模式切換 (Shift / CapsLock)"]
-        SyllableBuf["大千注音音節緩衝區 & 游標控制 (←/→)"]
-        PinMgr["局部手動選字鎖定器 (Pinned Segments)"]
-    end
-
-    subgraph Core_Layer ["3. 核心語言引擎 (E-IME::core - 跨平台零依賴)"]
-        Parser["ZhuyinParser (聲母/介音/韻母/聲調解析)"]
-        Trie["ZhuyinTrie (前綴字典樹檢索)"]
-        Viterbi["ConstrainedViterbiDecoder (支援局部鎖定之動態規劃解碼)"]
-    end
-
-    subgraph Sync_Layer ["4. 儲存與跨裝置同步層 (E-IME::sync)"]
-        SysDict["系統核心詞庫 (core_dict.txt)"]
-        UserDict["純文字自訂詞庫 (custom_words.txt)"]
-        DeltaLog["Per-Instance 增量日誌"]
-        Merger["累計詞頻增量合併器"]
-    end
-
-    subgraph UI_Layer ["5. 懸浮渲染層 (E-IME::ui)"]
-        CandWnd["Win32 WS_EX_NOACTIVATE 現代圓角候選窗"]
-        Theme["Win11 深淺色主題 & DWM 陰影渲染"]
-    end
-
-    HostApp <-->|TSF COM API| TIP
-    TIP --> KeySink
-    KeySink --> ModeMgr
-    ModeMgr --> SyllableBuf
-    SyllableBuf <--> PinMgr
-    SyllableBuf <--> Parser
-    Parser <--> Trie
-    PinMgr <--> Viterbi
-    Trie <--> Viterbi
-    Viterbi <--> SysDict
-    Viterbi <--> Merger
-    UserDict --> Merger
-    DeltaLog <--> Merger
-    SyllableBuf --> EditSession
-    EditSession --> CandWnd
-    Theme --> CandWnd
+flowchart TD
+    Host[宿主文字輸入框] <--> TSF[EimeTextService / TSF COM]
+    TSF --> Keys[按鍵與修飾鍵快照]
+    Keys --> State[InputStateMachine]
+    State --> Parser[ZhuyinParser]
+    State <--> Decoder[ViterbiDecoder]
+    Decoder --> Trie[ZhuyinTrie]
+    Core[core_dict.txt] --> Loader[DictLoader]
+    Custom[custom_words.txt] --> Loader
+    Loader --> Trie
+    State --> Journal[SyncJournal]
+    Journal --> Trie
+    State --> Snapshot[EditSnapshot / FIFO 佇列]
+    Snapshot --> Session[ITfEditSession]
+    Session --> Host
+    Session --> Window[CandidateWindow / GDI]
 ```
 
----
+| 模組 | 實作位置 | 職責 |
+| --- | --- | --- |
+| 注音解析 | [zhuyin.h](../engine/include/zhuyin.h) | 大千按鍵映射、聲韻調解析及標點對照 |
+| 字典樹 | [trie.h](../engine/include/trie.h) | 詞彙前綴查詢、精確查詢、基礎詞頻與個人權重 |
+| 解碼 | [viterbi.h](../engine/include/viterbi.h) | 音節切詞、手選區段約束、詞長及搭配評分 |
+| 組字狀態 | [input_state_machine.h](../engine/include/input_state_machine.h) | 游標、音節、literal 字元、候選分頁與模式切換 |
+| 詞庫載入 | [dict_loader.h](../engine/include/dict_loader.h) | UTF-8 TSV、中文路徑及二進位快取 |
+| 個人學習 | [sync_journal.h](../sync/include/sync_journal.h) | 每實例日誌、累計值合併及壓縮 |
+| Windows 整合 | [text_service.cpp](../tsf/text_service.cpp)、[register.cpp](../tsf/register.cpp) | TSF 回呼、組字範圍、登錄及游標座標 |
+| 候選窗 | [candidate_window.cpp](../ui/candidate_window.cpp) | 無啟用浮窗、多欄繪製、頁碼及繁簡短暫提示 |
 
-## 3. 五大工程侷限性與防禦性設計 (Limitations & Mitigations)
+## 按鍵到組字
 
-| 工程侷限性 | 現象與風險 | E-IME 的架構應對方案 |
-| :--- | :--- | :--- |
-| **1. 肌肉記憶恐怖谷** | 微小按鍵行為與 MS-IME 不同（如游標改字後整句跑掉）會導致極度不適。 | 實作 **Constrained Viterbi（受限動態規劃）**：當使用者在長句中段手動選字時，將該區段設為 `PinnedConstraint`，前後未鎖定區段自動重算最佳解，完全復刻微軟新注音核心體驗。 |
-| **2. 宿主 TSF 碎片化** | Word、Chrome、VS Code 回報游標矩形 (`GetTextExt`) 偶發失敗或座標為 `(0,0)`。 | 實作 **三級座標回退機制 (3-Tier Caret Fallback)**：優先取 `ITfContextView::GetTextExt` $\rightarrow$ 次取 Win32 `GetGUIThreadInfo` 游標 $\rightarrow$ 保底吸附於作用中視窗左下角內側。 |
-| **3. 焦點搶奪導致遊戲/編輯器閃退** | 傳統彈出視窗會搶走宿主 `WM_ACTIVATE` 焦點，導致全螢幕遊戲跳出或選單關閉。 | 候選窗嚴格設定 `WS_POPUP \| WS_EX_TOPMOST \| WS_EX_TOOLWINDOW \| WS_EX_NOACTIVATE`，滑鼠點擊或顯示時**絕對不搶奪宿主焦點**。 |
-| **4. 雲端同步檔案鎖定** | 多台電腦同時開啟 OneDrive 同步單一 SQLite 檔案會產生衝突副本或鎖死。 | 廢棄單一 DB，改用 **Per-Instance Append-Only Delta (`device_<hostname>_<writer-id>.delta`)**。每個宿主實例使用獨立檔案，讀取時比對各詞累計值；保留舊格式讀取，避免多實例共寫及壓縮後重算。 |
-| **5. 系統沙盒與權限隔離** | Windows 11 UWP / Edge 沙盒預設阻擋未宣告類別的輸入法 DLL。 | 在 `register.cpp` 完整註冊 `GUID_TFCAT_TIPCAP_IMMERSIVESUPPORT`、`SECUREMODE`、`UIELEMENTENABLED` 與 `SYSTRAYSUPPORT` 四大現代分類。 |
+`EimeTextService` 實作 `ITfTextInputProcessor`、`ITfKeyEventSink`、`ITfCompositionSink` 及 `ITfDisplayAttributeProvider`；目前並未實作 `ITfTextInputProcessorEx`。
 
----
+`OnTestKeyDown` 判斷是否攔截並保存按鍵快照，`OnKeyDown` 盡可能沿用同次事件的內容。Ctrl／Shift 有左右鍵追蹤；此分支也讀取 `GetKeyState` 與 `GetAsyncKeyState`。這些路徑仍需在實體鍵盤、遠端及快速連打情境下測試，mock 不涵蓋所有事件時序。
 
-## 4. 核心演算法：支援局部鎖定的受限 Viterbi 解碼
+狀態機有 `Idle`、`Composing`、`CandidateOpen` 三種狀態。完成的音節與插入的標點／英數以槽位保存；literal 槽位可以和注音組字一起移動、刪除及提交。手動選字建立 `PinnedSegment`，候選 Enter 只選字，組字 Enter 才提交文字。
 
-在微軟新注音中，使用者常先打完一整句（例如：`ㄐㄧㄣ ㄊㄧㄢ ㄊㄞˊ ㄐㄧ ㄉㄧㄢˋ ㄉㄚˋ ㄓㄤˇ` $\rightarrow$ 「今天台積電大漲」），若其中某個詞想換成同音字，會移動游標手動選擇。
+目前版本增加提早聲調補全：僅對未手選鎖定、原音節無精確匹配、補入聲韻後能匹配的情況回填前一槽位。它依賴目前詞庫的有效性判斷，不是任意次序都能修正。
 
-E-IME 的 `ConstrainedViterbiDecoder` 定義如下：
-* 設輸入音節序列長度為 $N$。
-* 使用者鎖定集合為 $P = \{ (s_k, L_k, W_k) \}$，代表從音節 $s_k$ 開始、長度為 $L_k$ 的區間強制鎖定為詞彙 $W_k$。
-* 狀態轉移時：
-  1. 若位置 $i$ 存在鎖定項目 $(i, L_k, W_k) \in P$，則**強制唯一轉移**至 $i + L_k$，並賦予極高正權重。
-  2. 若位置 $i$ 未被鎖定，則枚舉所有不跨越任何鎖定區間內部的候選詞 $w$，計算：
-     $$\text{Score}(i \to j) = \text{DP}[i] + \log P_{\text{base}}(w) + \Delta_{\text{user}}(w) + \text{Bonus}_{\text{length}}(j - i)$$
-  3. 其中 $\Delta_{\text{user}}(w)$ 來自跨裝置同步層即時合併的個人詞頻加成，使常用詞自動浮上第一候選！
+## 解碼與學習評分
 
----
+`ViterbiDecoder::decode()` 以音節位置作動態規劃，從 Trie 枚舉前綴候選；不允許一般候選跨越手動鎖定區段。鎖定轉移使用指定文字，無詞庫匹配時以原生注音保底。
 
-## 5. 專案目錄與模組結構
+一般候選的分數為：
 
 ```text
-E-IME/
-├── docs/
-│   └── ARCHITECTURE.md           # 本系統架構文檔
-├── engine/                       # [Layer 2 & 3] 跨平台純邏輯核心引擎
-│   └── include/
-│       ├── zhuyin.h              # 大千鍵盤映射與注音音節解析器
-│       ├── trie.h                # 前綴字典樹 + 動態個人詞頻加成
-│       ├── viterbi.h             # 支援局部鎖定 (Pinned Override) 的 Viterbi 解碼器
-│       ├── dict_loader.h         # 系統詞庫與自訂詞庫載入器
-│       └── input_state_machine.h # 完整 MS-IME 狀態機 (Shift/游標/選字/標點)
-├── sync/                         # [Layer 4] 無鎖跨裝置雲端同步引擎
-│   └── include/
-│       └── sync_journal.h        # Per-Device Append-Only Delta 日誌與合併器
-├── ui/                           # [Layer 5] Windows 現代候選字視窗
-│   ├── candidate_window.h        # WS_EX_NOACTIVATE 懸浮候選窗介面
-│   └── candidate_window.cpp      # Win11 圓角、深色主題與 GDI/DirectWrite 高清渲染
-├── tsf/                          # [Layer 1] Windows TSF COM 系統外殼
-│   ├── guids.h                   # E-IME 專屬 CLSID 與 Profile GUID
-│   ├── text_service.h            # ITfTextInputProcessorEx / KeyEventSink 宣告
-│   ├── text_service.cpp          # TSF 按鍵攔截、EditSession 組字上屏、游標定位
-│   ├── register.cpp              # Windows 登錄檔與 TSF 類別自動註冊/反註冊
-│   ├── dllmain.cpp               # COM ClassFactory 與 DLL 入口點
-│   └── E-IME_tsf.def              # COM 標準匯出符號表
-├── tools/                        # 詞庫生成與維運工具
-│   └── build_sample_dict.py      # 台灣繁體現代語料庫建置腳本
-├── cli/                          # 終端機互動模擬器與效能基準測試
-│   └── main.cpp
-├── tests/                        # 完整自動化單元與整合測試套件
-│   └── test_main.cpp
-├── scripts/                      # 部署與熱重載腳本
-│   ├── install.ps1               # 一鍵註冊 E-IME_tsf.dll 至 Windows 系統
-│   └── uninstall.ps1             # 一鍵卸載與清理
-└── CMakeLists.txt                # CMake 跨目標建置系統 (E-IME_cli, E-IME_tests, E-IME_tsf)
+前段分數 + 候選 log_prob + 詞長加成 + 字詞搭配加減分
 ```
+
+- `log_prob` 已納入個人學習權重。Trie 以 `base_frequency + user_boost × 250000` 計算有效詞頻；不應再把使用者加成當成另一個獨立項目重複相加。
+- 長度至少 2 的詞，加成為 `2.2 × (length - 1)`。
+- `compute_transition_score()` 是明確列出的有限搭配規則，例如「的／得」、「在／再」、「已／以」、「做／作」，未載入訓練出的 bigram 機率表。
+- 每個音節位置只保留一條最佳前段路徑，再用該路徑的前詞評分；不是保留完整「位置 × 前詞」狀態的 bigram 搜尋，不能據此宣稱所有上下文組合都有全域最優保證。
+
+## TSF 編輯與候選窗
+
+組字變化產生包含文字、游標、候選及模式的 `EditSnapshot`，送入 FIFO 佇列。`drain_edit_sessions()` 在宿主允許寫入時套用，世代編號用來排除停用或重新啟用前的過期回呼。
+
+一般組字採 `TF_LS_SOLID` 實線，目標區段採粗實線。文字位置需在 UTF-8、UTF-16 與音節槽位之間轉換。候選窗位置優先參考 TSF 文字範圍，再回退至 Win32 caret 或作用中視窗座標。
+
+候選窗使用 `WS_EX_NOACTIVATE`、`SWP_NOACTIVATE` 與 `WM_MOUSEACTIVATE` 處理避免啟用浮窗；繪圖為 GDI 雙緩衝。此分支使用直角、24px 候選字、38px 列高及最多四欄；尚未採 DirectWrite／Direct2D，也沒有深色主題或使用者設定介面。模式提示由視窗計時器約 1.2 秒後隱藏。窗體大小及高 DPI 顯示仍應實機檢查。
+
+## 詞庫與日誌
+
+初始化先依 DLL 旁的 `data-root.txt` 決定資料目錄，否則查找 DLL 旁或上層的 `data/`。安裝器會把來源專案的 `data/` 寫入該檔案，因此部署後仍依賴原資料目錄。
+
+`DictLoader` 載入 `core_dict.txt` 及選用的 `custom_words.txt`，使用 `.bin` 作快取。這個分支對初始化例外採降級處理，且仍有個人開發目錄的詞庫保底路徑；換機成功應以新機實際資料及輸出驗證，不能只靠 COM 建立成功判定。相關清理列在 [路線與待辦](PROCESS_AND_ROADMAP.md)。
+
+每個 `SyncJournal` 有自己的 writer ID，使用 `device_<hostname>_<writer-id>.delta`：
+
+1. 追加「時間、詞、注音、增量」，成功寫入後才更新本實例權重。
+2. 掃描各檔，以每檔各詞的累計值與本實例已套用值比較，只合併增加部分。
+3. 未完成換行的紀錄留待下次讀取；壓縮只處理本實例檔案，以暫存檔替換，不以行號判斷進度。
+4. 保留舊日誌讀取；不自動刪除歷史 writer 檔案。
+
+外部雲端硬碟負責傳輸；Git 不傳送個人日誌。這個設計不包含雲端帳號登入、衝突副本辨識或日誌重新命名後的去重。
+
+## 建置與部署
+
+CMake 建置 CLI、核心測試、壓力測試、同步回歸、TSF 生命週期／輸入測試及 DLL。COM 的四個標準匯出列於 [eime_tip.def](../tsf/eime_tip.def)；MSVC 使用靜態 CRT 與 UTF-8 原始碼設定，MinGW 靜態連結 C++ runtime。
+
+安裝器以 SHA-256 將 DLL 複製到 `%LOCALAPPDATA%\E-IME\versions\<hash>\eime_tip.dll`，避免覆寫已載入版本，再執行 COM／TSF 註冊及使用者覆寫。目前版本另嘗試加入既有 `zh-Hant*` 語言項目的 `InputMethodTips`，失敗會顯示警告。已開啟的宿主仍持有舊 DLL，更新後需重新開啟。
+
+測試覆蓋與實機限制見 [測試索引](../testbench/README.md)。

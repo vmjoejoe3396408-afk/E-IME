@@ -64,7 +64,7 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
         using DwmSetWindowAttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
         auto fn = reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(hDwm, "DwmSetWindowAttribute"));
         if (fn) {
-            DWORD preference = 2; // DWMWCP_ROUND
+            DWORD preference = 1; // DWMWCP_DONOTROUND (強制直角)
             fn(hwnd_, 33, &preference, sizeof(preference));
         }
         FreeLibrary(hDwm);
@@ -103,6 +103,19 @@ void CandidateWindow::destroy() {
     }
 }
 
+void CandidateWindow::show_toast(const std::wstring& message, int screen_x, int screen_y) {
+    if (!hwnd_) create();
+    if (!hwnd_) return;
+
+    is_toast_ = true;
+    toast_msg_ = message;
+    width_ = 140;
+    height_ = 44;
+
+    show_at(screen_x, screen_y);
+    SetTimer(hwnd_, 999, 1200, nullptr);
+}
+
 void CandidateWindow::update_content(
     const std::string& composition_line,
     const std::vector<WordCandidate>& page_candidates,
@@ -111,6 +124,7 @@ void CandidateWindow::update_content(
     size_t total_pages,
     bool is_simplified
 ) {
+    is_toast_ = false;
     comp_text_ = utf8_to_wide(composition_line);
     cand_texts_.clear();
     for (const auto& c : page_candidates) {
@@ -152,11 +166,29 @@ void CandidateWindow::recalculate_layout() {
     SelectObject(hdc, old_font);
     ReleaseDC(hwnd_, hdc);
 
+    if (is_toast_) {
+        width_ = 140;
+        height_ = 44;
+        return;
+    }
     const int item_h = 38;
-    int min_width = 160;
-    width_ = std::max({min_width, candidate_width + 80, static_cast<int>(tag_sz.cx) + 36});
+    int num_cols = 1;
+    if (cand_texts_.size() > 27) num_cols = 4;
+    else if (cand_texts_.size() > 18) num_cols = 3;
+    else if (cand_texts_.size() > 9) num_cols = 2;
+
     int footer_h = (total_pages_ > 1) ? 24 : 8;
-    height_ = 12 + static_cast<int>(cand_texts_.size()) * item_h + footer_h;
+
+    if (num_cols > 1) {
+        int col_width = std::max(120, candidate_width + 48);
+        width_ = col_width * num_cols + 24;
+        int max_rows = 9;
+        height_ = 12 + max_rows * item_h + footer_h;
+    } else {
+        int min_width = 160;
+        width_ = std::max({min_width, candidate_width + 80, static_cast<int>(tag_sz.cx) + 36});
+        height_ = 12 + static_cast<int>(cand_texts_.size()) * item_h + footer_h;
+    }
 }
 
 void CandidateWindow::show_at(int screen_x, int screen_y) {
@@ -221,39 +253,79 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
 
     SetBkMode(mem_dc, TRANSPARENT);
 
-    // One candidate per row; number keys and arrow navigation keep their ordering.
-    const int item_h = 38;
-    const int cur_x = 16;
-    for (size_t i = 0; i < cand_texts_.size(); ++i) {
-        SelectObject(mem_dc, font_cand_);
-        const int row_y = 6 + static_cast<int>(i) * item_h;
+    if (is_toast_) {
+        // 直角 Toast 提示視窗 (藍色指示條 + 置中標題)
+        RECT ind_rc = {0, 0, 4, h};
+        HBRUSH ind_brush = CreateSolidBrush(RGB(0, 103, 192));
+        FillRect(mem_dc, &ind_rc, ind_brush);
+        DeleteObject(ind_brush);
 
-        // 高亮選中項目膠囊背景 (微軟現代淺藍 #EBF3FC 與左側微軟藍指示條 #0067C0)
+        SelectObject(mem_dc, font_comp_);
+        SetTextColor(mem_dc, RGB(20, 20, 20));
+        RECT t_rc = {8, 0, w, h};
+        DrawTextW(mem_dc, toast_msg_.c_str(), static_cast<int>(toast_msg_.size()), &t_rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+        BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
+        SelectObject(mem_dc, old_pen);
+        SelectObject(mem_dc, old_brush);
+        DeleteObject(border_pen);
+        SelectObject(mem_dc, old_bmp);
+        DeleteObject(mem_bmp);
+        DeleteDC(mem_dc);
+        return;
+    }
+
+    const int item_h = 38;
+    int num_cols = 1;
+    if (cand_texts_.size() > 27) num_cols = 4;
+    else if (cand_texts_.size() > 18) num_cols = 3;
+    else if (cand_texts_.size() > 9) num_cols = 2;
+
+    int col_width = (num_cols > 1) ? ((w - 24) / num_cols) : (w - 24);
+
+    if (num_cols > 1) {
+        HPEN div_pen = CreatePen(PS_SOLID, 1, RGB(230, 230, 230));
+        HGDIOBJ old_p = SelectObject(mem_dc, div_pen);
+        for (int c = 1; c < num_cols; ++c) {
+            int div_x = 12 + c * col_width;
+            MoveToEx(mem_dc, div_x, 10, nullptr);
+            LineTo(mem_dc, div_x, h - 16);
+        }
+        SelectObject(mem_dc, old_p);
+        DeleteObject(div_pen);
+    }
+
+    for (size_t i = 0; i < cand_texts_.size(); ++i) {
+        int col = static_cast<int>(i / 9);
+        int row = static_cast<int>(i % 9);
+        int col_left = 12 + col * col_width;
+        int item_w = col_width - 6;
+        const int row_y = 6 + row * item_h;
+        int cur_x = col_left + 8;
+
         if (i == selected_idx_) {
-            RECT hi_rc = {6, row_y, w - 6, row_y + item_h};
+            RECT hi_rc = {col_left + 2, row_y, col_left + 2 + item_w, row_y + item_h};
             HBRUSH hi_brush = CreateSolidBrush(RGB(235, 243, 252));
             FillRect(mem_dc, &hi_rc, hi_brush);
             DeleteObject(hi_brush);
 
-            RECT ind_rc = {6, row_y + 4, 10, row_y + item_h - 4};
+            RECT ind_rc = {col_left + 2, row_y + 4, col_left + 6, row_y + item_h - 4};
             HBRUSH ind_brush = CreateSolidBrush(RGB(0, 103, 192));
             FillRect(mem_dc, &ind_rc, ind_brush);
             DeleteObject(ind_brush);
         }
 
-        // 數字序號 (1~9)
         SelectObject(mem_dc, font_num_);
         SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 103, 192) : RGB(115, 115, 115));
-        wchar_t num_buf[4] = {static_cast<wchar_t>(L'1' + i), L'.', L'\0'};
-        RECT num_rc = {cur_x, row_y, cur_x + 24, row_y + item_h};
+        int num_idx = static_cast<int>(row);
+        wchar_t num_buf[4] = {static_cast<wchar_t>(L'1' + num_idx), L'.', L' ', L'\0'};
+        RECT num_rc = {cur_x, row_y, cur_x + 22, row_y + item_h};
         DrawTextW(mem_dc, num_buf, -1, &num_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
-        // 候選詞文字 (高對比清楚黑字)
         SelectObject(mem_dc, font_cand_);
         SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 0, 0) : RGB(32, 32, 32));
-        RECT txt_rc = {cur_x + 28, row_y, w - 14, row_y + item_h};
+        RECT txt_rc = {cur_x + 24, row_y, col_left + item_w - 2, row_y + item_h};
         DrawTextW(mem_dc, cand_texts_[i].c_str(), static_cast<int>(cand_texts_[i].size()), &txt_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-
     }
 
     // 只有在多於 1 頁時才顯示頁碼（例如 1/2），不顯示 [繁] 或 [簡]
@@ -294,6 +366,12 @@ LRESULT CALLBACK CandidateWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARA
             return DefWindowProcW(hwnd, msg, wp, lp);
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE; // 滑鼠點擊時絕不搶焦點
+        case WM_TIMER:
+            if (wp == 999) {
+                KillTimer(hwnd, 999);
+                if (self) self->hide();
+            }
+            return 0;
         case WM_ERASEBKGND:
             return 1;
         case WM_PAINT: {

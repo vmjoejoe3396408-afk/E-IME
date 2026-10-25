@@ -1,4 +1,4 @@
-#Requires -Version 7.0
+#Requires -Version 5.1
 param(
     [string]$SourceDll,
     [switch]$UseExistingRegistration
@@ -62,5 +62,18 @@ $com.SetValue('', $installedDll)
 $com.SetValue('ThreadingModel', 'Apartment')
 $userProfile = New-Item -Path "HKCU:\$profile" -Force
 $userProfile.SetValue('Enable', 1, [Microsoft.Win32.RegistryValueKind]::DWord)
+
+$tip = "0404:$clsid{D8E42B11-7A5C-4E91-9B2A-1F3C5D7E9A01}"
+try {
+    $list = Get-WinUserLanguageList
+    $zh = $list | Where-Object { $_.LanguageTag -like "zh-Hant*" }
+    if ($zh -and (-not ($zh.InputMethodTips -contains $tip))) {
+        $zh.InputMethodTips.Add($tip)
+        Set-WinUserLanguageList $list -Force
+        Write-Host "[E-IME] Added to WinUserLanguageList ($($zh.LanguageTag))"
+    }
+} catch {
+    Write-Warning "Could not update WinUserLanguageList: $_"
+}
 Write-Host "[E-IME] Installed immutable version: $installedDll"
 Write-Host "[E-IME] SHA256: $hash"
