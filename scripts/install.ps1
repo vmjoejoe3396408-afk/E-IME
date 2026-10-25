@@ -64,16 +64,31 @@ $userProfile = New-Item -Path "HKCU:\$profile" -Force
 $userProfile.SetValue('Enable', 1, [Microsoft.Win32.RegistryValueKind]::DWord)
 
 $tip = "0404:$clsid{D8E42B11-7A5C-4E91-9B2A-1F3C5D7E9A01}"
-try {
-    $list = Get-WinUserLanguageList
-    $zh = $list | Where-Object { $_.LanguageTag -like "zh-Hant*" }
-    if ($zh -and (-not ($zh.InputMethodTips -contains $tip))) {
-        $zh.InputMethodTips.Add($tip)
-        Set-WinUserLanguageList $list -Force
-        Write-Host "[E-IME] Added to WinUserLanguageList ($($zh.LanguageTag))"
+# Get-/Set-WinUserLanguageList are CDXML wrappers that only marshal under Windows
+# PowerShell 5.1; pwsh 7 throws "Cannot marshal 'parameter #2'". Delegate to 5.1.
+$langList = @'
+$tip = "TIP_PLACEHOLDER"
+$list = Get-WinUserLanguageList
+$changed = $false
+foreach ($z in @($list | Where-Object { $_.LanguageTag -like "zh-Hant*" })) {
+    if (-not ($z.InputMethodTips -contains $tip)) {
+        $z.InputMethodTips.Add($tip)
+        $changed = $true
+        Write-Output "[E-IME] Added to WinUserLanguageList ($($z.LanguageTag))"
     }
+}
+if ($changed) { Set-WinUserLanguageList $list -Force }
+'@
+$langList = $langList.Replace('TIP_PLACEHOLDER', $tip)
+$langFile = Join-Path $env:TEMP ("eime-langlist-" + $PID + ".ps1")
+[IO.File]::WriteAllText($langFile, $langList, [Text.UTF8Encoding]::new($true))
+$ps51 = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
+try {
+    & $ps51 -NoProfile -ExecutionPolicy Bypass -File $langFile
 } catch {
     Write-Warning "Could not update WinUserLanguageList: $_"
+} finally {
+    Remove-Item -LiteralPath $langFile -Force -ErrorAction SilentlyContinue
 }
 Write-Host "[E-IME] Installed immutable version: $installedDll"
 Write-Host "[E-IME] SHA256: $hash"
