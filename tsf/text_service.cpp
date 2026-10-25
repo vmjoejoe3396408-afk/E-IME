@@ -103,13 +103,6 @@ void EimeTextService::initialize_engine_resources() {
         } else if (!std::filesystem::exists(data_dir / "core_dict.txt")) {
             data_dir = base_dir.parent_path() / "data";
         }
-        if (!std::filesystem::exists(data_dir / "core_dict.txt")) {
-            std::filesystem::path ws_dir = "C:/Users/Chiao/.gemini/antigravity/scratch/E-IME/data";
-            if (std::filesystem::exists(ws_dir / "core_dict.txt")) {
-                data_dir = ws_dir;
-            }
-        }
-
         if (std::filesystem::exists(data_dir / "core_dict.txt")) {
             DictLoader::load_from_file(data_dir / "core_dict.txt", trie_, false);
         }

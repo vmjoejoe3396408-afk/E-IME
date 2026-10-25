@@ -4,11 +4,18 @@
 
 以 C++20 開發的 Windows 注音輸入法，保留微軟注音使用者熟悉的整句組字、回頭選字與中英切換方式，讓詞庫、選字規則及候選窗可以自行維護。
 
+[![Windows CI](https://github.com/vmjoejoe3396408-afk/E-IME/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/vmjoejoe3396408-afk/E-IME/actions/workflows/ci.yml)
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](CMakeLists.txt)
 [![Windows x64](https://img.shields.io/badge/Windows-10%20%2F%2011%20x64-0078D6.svg)](#支援範圍)
 [![License: MIT](https://img.shields.io/badge/Code-MIT-yellow.svg)](LICENSE)
 
-**目前是私人預覽階段。** 功能分支 `feature/aggressive-correction` 已合併至主線 `master`；CMake 版本仍為 `0.4.0`。合併前的功能差異見 [文件索引與分支對照](docs/README.md)。
+**目前為公開原始碼預覽版。** 主線為 `master`，CMake 版本為 `0.4.0`；目前需自行編譯，尚未提供預編譯安裝套件。實際宿主相容性、高 DPI 與跨裝置同步仍在驗證中。
+
+## 候選窗預覽
+
+![E-IME 緊湊四欄候選窗繪製預覽](docs/images/candidate-window.png)
+
+20px 候選字、30px 列高，左側共用序號，最多四欄／36 項；直角細框、整格藍底選取，移除陰影。上圖為目前繪製程式產生的預覽，實際字體與尺寸受宿主及螢幕環境影響。繁簡切換另於滑鼠游標上方顯示約 1.2 秒的小型提示。
 
 ## 開發方式
 
@@ -65,7 +72,7 @@ pwsh -File .\scripts\install.ps1 -SourceDll .\build-msvc\Release\eime_tip.dll
 | 指定繁體／簡體 | **右 Ctrl＋右 Shift＋T／S** |
 | 逗號／句號／頓號 | Ctrl+,／Ctrl+.／Ctrl+' |
 
-目前版本使用直角淺色候選窗、實線組字底線，錯誤提示預設靜音。繁簡模式以切換時的短暫提示顯示，候選窗不常駐 `[繁]`／`[簡]` 標籤。更多標點、選字細節與容錯限制見 [操作指南](docs/USAGE.md)。
+目前版本使用無陰影的直角淺色候選窗、實線組字底線，錯誤提示預設靜音。繁簡模式以滑鼠游標上方的小型提示顯示，候選窗不常駐 `[繁]`／`[簡]` 標籤。更多標點、選字細節與容錯限制見 [操作指南](docs/USAGE.md)。
 
 ## 支援範圍
 
@@ -74,6 +81,10 @@ pwsh -File .\scripts\install.ps1 -SourceDll .\build-msvc\Release\eime_tip.dll
 - 每次 CTest 有 5 組測試，核心套件含 15 項模組；TSF 自動測試使用 mock 宿主。自動測試通過不能替代記事本、瀏覽器、編輯器與多螢幕的實機觀察。
 - 個人日誌與快取不經 Git 傳送；`data/custom_words.txt` 是已追蹤的公開範例，加入私人詞彙後請留意不要提交。
 - 歷次測試的版本、範圍及證據見 [測試索引](testbench/README.md)，目前待驗證事項見 [研發紀錄與路線](docs/PROCESS_AND_ROADMAP.md)。
+
+## 回報問題
+
+請在 [GitHub Issues](https://github.com/vmjoejoe3396408-afk/E-IME/issues) 提供 Windows 版本、宿主程式、螢幕縮放、commit 或版本、實際按鍵順序，以及預期／實際結果。畫面與日誌請先移除私人輸入內容。
 
 ## 文件與原始碼
 

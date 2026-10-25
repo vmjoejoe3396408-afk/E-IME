@@ -7,7 +7,7 @@
 | 必要項目 | 用途 |
 | --- | --- |
 | Windows 10／11 x64 | 目前的系統整合目標；不含 32 位元應用模組 |
-| Git 與私人倉庫存取權 | 下載原始碼；Git Credential Manager 可能請你在瀏覽器登入 |
+| Git | 下載公開原始碼；一般 clone 不需登入 GitHub |
 | PowerShell 7（`pwsh`） | 執行以下命令與部署腳本 |
 | CMake 3.20+ | 配置、建置及 CTest |
 | Visual Studio 2022 C++ 桌面工具組，或 MinGW-w64 GCC 13+ 與 Ninja | 二選一的編譯工具鏈；MinGW 的 g++ 與 Ninja 須在 PATH |
