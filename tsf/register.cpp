@@ -73,7 +73,7 @@ HRESULT RegisterTsfProfiles() {
             static_cast<ULONG>(wcslen(kEimeDisplayName)),
             module_path,
             static_cast<ULONG>(wcslen(module_path)),
-            0
+            0 // First (and only) icon group: the embedded E-IME mark.
         );
     }
     profiles->Release();

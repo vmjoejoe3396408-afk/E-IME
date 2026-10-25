@@ -52,6 +52,6 @@ static constexpr GUID GUID_EIME_DisplayAttr_Target = {
 };
 
 constexpr LANGID kTaiwanChineseLangId = MAKELANGID(LANG_CHINESE, SUBLANG_CHINESE_TRADITIONAL); // 0x0404
-constexpr const wchar_t* kEimeDisplayName = L"E-IME (改進型注音)";
+constexpr const wchar_t* kEimeDisplayName = L"E-IME";
 
 } // namespace eime

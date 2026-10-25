@@ -87,6 +87,9 @@ private:
     std::unique_ptr<SyncJournal> journal_;
     std::unique_ptr<InputStateMachine> state_machine_;
     CandidateWindow candidate_window_;
+    CandidateWindow mode_toast_;
+
+    void show_charset_toast();
 
     bool shift_pressed_alone_;
     unsigned long activation_generation_ = 0;

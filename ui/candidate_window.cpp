@@ -85,6 +85,11 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
     );
+    font_toast_ = CreateFontW(
+        -12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+        CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft JhengHei UI"
+    );
 
     return true;
 }
@@ -97,6 +102,7 @@ void CandidateWindow::destroy() {
     if (font_comp_) { DeleteObject(font_comp_); font_comp_ = nullptr; }
     if (font_cand_) { DeleteObject(font_cand_); font_cand_ = nullptr; }
     if (font_num_)  { DeleteObject(font_num_);  font_num_  = nullptr; }
+    if (font_toast_) { DeleteObject(font_toast_); font_toast_ = nullptr; }
     if (!class_name_.empty()) {
         UnregisterClassW(class_name_.c_str(), instance_);
         class_name_.clear();
@@ -109,10 +115,16 @@ void CandidateWindow::show_toast(const std::wstring& message, int screen_x, int 
 
     is_toast_ = true;
     toast_msg_ = message;
-    width_ = 140;
-    height_ = 44;
+    HDC dc = GetDC(hwnd_);
+    auto previous = SelectObject(dc, font_toast_);
+    SIZE size = {};
+    GetTextExtentPoint32W(dc, message.c_str(), static_cast<int>(message.size()), &size);
+    SelectObject(dc, previous);
+    ReleaseDC(hwnd_, dc);
+    width_ = size.cx + 12;
+    height_ = std::max(20, static_cast<int>(size.cy) + 6);
 
-    show_at(screen_x, screen_y);
+    show_at(screen_x, screen_y - height_ - 8);
     SetTimer(hwnd_, 999, 1200, nullptr);
 }
 
@@ -124,6 +136,7 @@ void CandidateWindow::update_content(
     size_t total_pages,
     bool is_simplified
 ) {
+    if (hwnd_) KillTimer(hwnd_, 999);
     is_toast_ = false;
     comp_text_ = utf8_to_wide(composition_line);
     cand_texts_.clear();
@@ -254,16 +267,11 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
     SetBkMode(mem_dc, TRANSPARENT);
 
     if (is_toast_) {
-        // 直角 Toast 提示視窗 (藍色指示條 + 置中標題)
-        RECT ind_rc = {0, 0, 4, h};
-        HBRUSH ind_brush = CreateSolidBrush(RGB(0, 103, 192));
-        FillRect(mem_dc, &ind_rc, ind_brush);
-        DeleteObject(ind_brush);
-
-        SelectObject(mem_dc, font_comp_);
-        SetTextColor(mem_dc, RGB(20, 20, 20));
-        RECT t_rc = {8, 0, w, h};
-        DrawTextW(mem_dc, toast_msg_.c_str(), static_cast<int>(toast_msg_.size()), &t_rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+        // Compact, non-activating confirmation above the mouse pointer.
+        SelectObject(mem_dc, font_toast_);
+        SetTextColor(mem_dc, RGB(80, 80, 80));
+        RECT t_rc = {6, 1, w - 6, h - 1};
+        DrawTextW(mem_dc, toast_msg_.c_str(), static_cast<int>(toast_msg_.size()), &t_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
 
         BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
         SelectObject(mem_dc, old_pen);

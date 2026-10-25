@@ -15,6 +15,9 @@ int wmain(int argc, wchar_t** argv) {
         HMODULE dll = LoadLibraryW(argv[1]);
         if (!dll) std::cerr << "LoadLibrary error " << GetLastError() << std::endl;
         CHECK(dll);
+        HICON profile_icon = static_cast<HICON>(LoadImageW(dll, MAKEINTRESOURCEW(101), IMAGE_ICON, 16, 16, 0));
+        CHECK(profile_icon);
+        DestroyIcon(profile_icon);
         auto get = reinterpret_cast<HRESULT(WINAPI*)(REFCLSID, REFIID, void**)>(GetProcAddress(dll, "DllGetClassObject"));
         auto unload = reinterpret_cast<HRESULT(WINAPI*)()>(GetProcAddress(dll, "DllCanUnloadNow"));
         CHECK(get && unload);

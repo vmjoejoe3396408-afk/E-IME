@@ -75,6 +75,7 @@ EimeTextService::EimeTextService()
 EimeTextService::~EimeTextService() {
     if (edit_context_) edit_context_->Release();
     candidate_window_.destroy();
+    mode_toast_.destroy();
     if (composition_) {
         composition_->Release();
         composition_ = nullptr;
@@ -208,6 +209,7 @@ STDMETHODIMP EimeTextService::Deactivate() {
     }
     candidate_window_.hide();
     candidate_window_.destroy();
+    mode_toast_.destroy();
 
     if (thread_mgr_) {
         ITfKeystrokeMgr* key_mgr = nullptr;
@@ -230,6 +232,7 @@ STDMETHODIMP EimeTextService::OnSetFocus(BOOL fForeground) {
         shift_keys_ = 0;
         shift_state_known_ = false;
         candidate_window_.hide();
+        mode_toast_.hide();
     } else if (journal_) {
         // 當切換視窗重新取得焦點時，順便增量同步雲端目錄的新詞頻
         journal_->sync_all_devices(trie_);
@@ -525,6 +528,14 @@ STDMETHODIMP EimeTextService::OnTestKeyUp(ITfContext* pic, WPARAM wParam, LPARAM
     return S_OK;
 }
 
+void EimeTextService::show_charset_toast() {
+    POINT pt = {};
+    if (!GetCursorPos(&pt)) pt = get_fallback_caret_position();
+    mode_toast_.create(g_hInst);
+    mode_toast_.show_toast(state_machine_->charset() == OutputCharset::Simplified
+        ? L"✓ 已切換到 簡體中文" : L"✓ 已切換到 繁體中文", pt.x, pt.y);
+}
+
 STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     if (!pfEaten || !pic) return E_INVALIDARG;
     observe_ctrl_key(wParam, lParam, true);
@@ -556,16 +567,13 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
     // 繁簡切換快捷鍵:
     if (input.rctrl && input.rshift && (wParam == 'T' || wParam == 't')) {
         handled = state_machine_->process_special_key(SpecialKey::CharsetTraditional, committed);
-        POINT pt = get_fallback_caret_position();
-        candidate_window_.show_toast(L"繁體中文", pt.x, pt.y);
+        show_charset_toast();
     } else if (input.rctrl && input.rshift && (wParam == 'S' || wParam == 's')) {
         handled = state_machine_->process_special_key(SpecialKey::CharsetSimplified, committed);
-        POINT pt = get_fallback_caret_position();
-        candidate_window_.show_toast(L"簡體中文", pt.x, pt.y);
+        show_charset_toast();
     } else if (ctrl_down && shift_down && (wParam == 'F' || wParam == 'f')) {
         handled = state_machine_->process_special_key(SpecialKey::CharsetToggle, committed);
-        POINT pt = get_fallback_caret_position();
-        candidate_window_.show_toast(state_machine_->charset() == OutputCharset::Simplified ? L"簡體中文" : L"繁體中文", pt.x, pt.y);
+        show_charset_toast();
     } else if (state_machine_->mode() == InputMode::Chinese && shift_down && wParam == VK_OEM_COMMA) {
         handled = state_machine_->process_literal("，", committed);
     } else if (state_machine_->mode() == InputMode::Chinese && shift_down && wParam == VK_OEM_PERIOD) {

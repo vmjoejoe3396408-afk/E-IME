@@ -65,7 +65,7 @@ flowchart TD
 
 一般組字採 `TF_LS_SOLID` 實線，目標區段採粗實線。文字位置需在 UTF-8、UTF-16 與音節槽位之間轉換。候選窗位置優先參考 TSF 文字範圍，再回退至 Win32 caret 或作用中視窗座標。
 
-候選窗使用 `WS_EX_NOACTIVATE`、`SWP_NOACTIVATE` 與 `WM_MOUSEACTIVATE` 處理避免啟用浮窗；繪圖為 GDI 雙緩衝。此分支使用直角、20px 候選字、30px 列高及最多四欄；尚未採 DirectWrite／Direct2D，也沒有深色主題或使用者設定介面。模式提示由視窗計時器約 1.2 秒後隱藏。窗體大小及高 DPI 顯示仍應實機檢查。
+候選窗使用 `WS_EX_NOACTIVATE`、`SWP_NOACTIVATE` 與 `WM_MOUSEACTIVATE` 處理避免啟用浮窗；繪圖為 GDI 雙緩衝。此分支使用直角、20px 候選字、30px 列高及最多四欄；尚未採 DirectWrite／Direct2D，也沒有深色主題或使用者設定介面。模式提示使用獨立視窗，出現在滑鼠游標上方，由視窗計時器約 1.2 秒後隱藏；不共用候選窗的內容或計時器。窗體大小及高 DPI 顯示仍應實機檢查。
 
 ## 詞庫與日誌
 

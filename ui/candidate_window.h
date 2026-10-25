@@ -53,6 +53,7 @@ private:
     HFONT font_comp_ = nullptr;
     HFONT font_cand_ = nullptr;
     HFONT font_num_ = nullptr;
+    HFONT font_toast_ = nullptr;
 
     std::wstring comp_text_;
     std::vector<std::wstring> cand_texts_;

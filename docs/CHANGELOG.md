@@ -6,6 +6,9 @@
 
 ## [Unreleased] — master
 
+- Windows 輸入法註冊名稱改為 `E-IME`，DLL 內嵌專屬圖示供語言列／輸入法清單辨識；系統語言縮寫的呈現仍由 Windows 決定。
+- 繁簡切換改為滑鼠游標上方的小型白底勾選提示，約 1.2 秒後消失；提示視窗與候選窗分開，避免互相覆蓋或被舊計時器誤隱藏。
+
 - 候選字級由 24px 縮為 20px、列高由 38px 縮為 30px，降低在 1080p 螢幕上的佔用；布局與繪製同步調整。
 - 修正 MinGW 相容宣告中 `ITfDisplayAttributeProvider` 的錯誤 IID，讓 Windows 宿主可取得組字實線底線；回歸測試改用獨立的 Windows SDK IID 查詢，避免測試與 DLL 共用錯誤常數仍通過。記事本視覺效果仍需實機確認。
 

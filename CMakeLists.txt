@@ -44,12 +44,22 @@ endif()
 
 # 3. Windows TSF COM 系統輸入法核心元件 (eime_tip.dll)
 if (WIN32)
+    enable_language(RC)
+    # Keep resource inputs relative to the build directory for Unicode paths.
+    configure_file(ui/eime.ico "${CMAKE_CURRENT_BINARY_DIR}/eime.ico" COPYONLY)
+    file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.rc" "101 ICON \"eime.ico\"\n")
     add_library(eime_tsf SHARED
         tsf/dllmain.cpp
         tsf/text_service.cpp
         tsf/register.cpp
         ui/candidate_window.cpp
+        "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.rc"
     )
+    # windres invokes its preprocessor through an ANSI command line. The icon
+    # needs no headers; omit source include paths from that command entirely.
+    get_directory_property(EIME_SOURCE_INCLUDES INCLUDE_DIRECTORIES)
+    set_property(TARGET eime_tsf PROPERTY INCLUDE_DIRECTORIES
+        "$<$<COMPILE_LANGUAGE:CXX>:${EIME_SOURCE_INCLUDES}>")
     set_target_properties(eime_tsf PROPERTIES
         PREFIX ""
         OUTPUT_NAME "eime_tip"
