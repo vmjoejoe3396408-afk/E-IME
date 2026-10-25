@@ -1,5 +1,7 @@
 # E-IME (Enhanced IME)
 
+**本專案的全部程式碼均由 AI 生成。作者沒有手寫任何一行程式碼，僅提供 AI 指示生成。**
+
 以 C++20 開發的 Windows 注音輸入法，保留微軟注音使用者熟悉的整句組字、回頭選字與中英切換方式，讓詞庫、選字規則及候選窗可以自行維護。
 
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-blue.svg)](CMakeLists.txt)
@@ -10,7 +12,7 @@
 
 ## 開發方式
 
-**本專案的全部程式碼均由 AI 生成。作者沒有手寫任何一行程式碼，僅提供指示。** 程式碼的生成方式與第三方資料來源分別記錄於 [實作與來源紀錄](docs/IMPLEMENTATION_PROVENANCE.md) 及 [第三方聲明](THIRD_PARTY_NOTICES.md)。
+程式碼的生成方式與第三方資料來源分別記錄於 [實作與來源紀錄](docs/IMPLEMENTATION_PROVENANCE.md) 及 [第三方聲明](THIRD_PARTY_NOTICES.md)。
 
 ## 想改善什麼
 
