@@ -825,7 +825,7 @@ void EimeTextService::execute_edit_session(TfEditCookie ec, ITfContext* context,
             std::wstring winline = CandidateWindow::utf8_to_wide(inline_preview);
             comp_range->SetText(ec, 0, winline.c_str(), static_cast<LONG>(winline.size()));
 
-            // 1. 設置 TSF 虛線顯示屬性 (GUID_PROP_ATTRIBUTE)
+            // 1. 設置 TSF 實線顯示屬性 (GUID_PROP_ATTRIBUTE)
             ITfProperty* prop = nullptr;
             if (atom_input_ != 0 && SUCCEEDED(context->GetProperty(GUID_PROP_ATTRIBUTE, &prop)) && prop) {
                 VARIANT var;

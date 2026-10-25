@@ -11,12 +11,13 @@
 #ifndef __ITfDisplayAttributeProvider_INTERFACE_DEFINED__
 #define __ITfDisplayAttributeProvider_INTERFACE_DEFINED__
 
-// {FEE45768-45A8-444A-A0F1-4359873D63B2}
+// Windows SDK IID; keep the MinGW fallback identical to the system interface.
+// {FEE47777-163C-4769-996A-6E9C50AD8F54}
 static constexpr GUID IID_ITfDisplayAttributeProvider = {
-    0xfee45768, 0x45a8, 0x444a, {0xa0, 0xf1, 0x43, 0x59, 0x87, 0x3d, 0x63, 0xb2}
+    0xfee47777, 0x163c, 0x4769, {0x99, 0x6a, 0x6e, 0x9c, 0x50, 0xad, 0x8f, 0x54}
 };
 
-MIDL_INTERFACE("fee45768-45a8-444a-a0f1-4359873d63b2")
+MIDL_INTERFACE("fee47777-163c-4769-996a-6e9c50ad8f54")
 ITfDisplayAttributeProvider : public IUnknown
 {
     virtual HRESULT STDMETHODCALLTYPE EnumDisplayAttributeInfo(

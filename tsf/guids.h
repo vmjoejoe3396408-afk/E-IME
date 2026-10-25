@@ -39,7 +39,7 @@ static constexpr GUID EIME_GUID_TFCAT_TIPCAP_SYSTRAYSUPPORT = {
     0x25504fb4, 0x7bab, 0x4bc1, {0x9c, 0x69, 0xcf, 0x81, 0x89, 0x0f, 0x0e, 0xf5}
 };
 
-// 顯示屬性 (Display Attributes): 組字虛線底線 (Input)
+// 顯示屬性 (Display Attributes): 組字實線底線 (Input)
 // {D8E42B12-7A5C-4E91-9B2A-1F3C5D7E9A01}
 static constexpr GUID GUID_EIME_DisplayAttr_Input = {
     0xd8e42b12, 0x7a5c, 0x4e91, {0x9b, 0x2a, 0x1f, 0x3c, 0x5d, 0x7e, 0x9a, 0x01}

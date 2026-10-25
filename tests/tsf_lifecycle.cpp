@@ -24,12 +24,19 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(SUCCEEDED(factory->CreateInstance(nullptr, IID_ITfTextInputProcessor, reinterpret_cast<void**>(&tip))));
         factory->Release();
         ITfDisplayAttributeProvider* dap = nullptr;
-        CHECK(SUCCEEDED(tip->QueryInterface(IID_ITfDisplayAttributeProvider, reinterpret_cast<void**>(&dap))));
+        // Use the Windows SDK IID independently of the fallback declaration:
+        // sharing an incorrect constant with the DLL previously hid this failure.
+        const IID system_provider_iid = {0xfee47777, 0x163c, 0x4769,
+            {0x99, 0x6a, 0x6e, 0x9c, 0x50, 0xad, 0x8f, 0x54}};
+        CHECK(SUCCEEDED(tip->QueryInterface(system_provider_iid, reinterpret_cast<void**>(&dap))));
         IEnumTfDisplayAttributeInfo* attrs = nullptr;
         CHECK(SUCCEEDED(dap->EnumDisplayAttributeInfo(&attrs)));
         ITfDisplayAttributeInfo* info = nullptr;
         ULONG fetched = 0;
         CHECK(attrs->Next(1, &info, &fetched) == S_OK && fetched == 1);
+        TF_DISPLAYATTRIBUTE attr = {};
+        CHECK(SUCCEEDED(info->GetAttributeInfo(&attr)));
+        CHECK(attr.lsStyle == TF_LS_SOLID && attr.bAttr == TF_ATTR_INPUT);
         dap->Release();
         tip->Release();
         if (argc == 2) CHECK(unload() == S_FALSE); // Windows may retain metadata after the TIP is gone.

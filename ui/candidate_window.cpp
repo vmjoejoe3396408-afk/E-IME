@@ -71,12 +71,12 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
     }
 
     font_comp_ = CreateFontW(
-        -24, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+        -20, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft JhengHei UI"
     );
     font_cand_ = CreateFontW(
-        -24, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
+        -20, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft JhengHei UI"
     );
@@ -171,7 +171,7 @@ void CandidateWindow::recalculate_layout() {
         height_ = 44;
         return;
     }
-    const int item_h = 38;
+    const int item_h = 30;
     int num_cols = 1;
     if (cand_texts_.size() > 27) num_cols = 4;
     else if (cand_texts_.size() > 18) num_cols = 3;
@@ -275,7 +275,7 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
         return;
     }
 
-    const int item_h = 38;
+    const int item_h = 30;
     int num_cols = 1;
     if (cand_texts_.size() > 27) num_cols = 4;
     else if (cand_texts_.size() > 18) num_cols = 3;
