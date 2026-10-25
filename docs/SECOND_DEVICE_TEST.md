@@ -67,6 +67,8 @@ pwsh -File .\scripts\install.ps1 -SourceDll .\build\eime_tip.dll
 
 安裝器會輸出安裝路徑與 DLL 的 SHA-256。DLL 複製至本機版本目錄，但詞庫仍指向 checkout 的 `data/`，請保留該目錄。
 
+也可雙擊專案根目錄的 `安裝或重新註冊 E-IME.cmd`，由它呼叫相同的安裝器；需要 PowerShell 7，並會在必要時要求管理員權限。它只安裝或重新註冊既有 DLL，不會下載或編譯更新。若使用 `build-msvc/` 或其他自訂建置位置，請優先使用上方明確指定 `-SourceDll` 的命令，以免選到其他建置輸出。
+
 ## 更新已存在的 checkout
 
 先確認自己的修改已儲存或提交，再於功能分支執行：
