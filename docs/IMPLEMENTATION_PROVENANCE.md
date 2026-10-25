@@ -4,6 +4,10 @@
 
 ## 開發方式與紀錄範圍
 
+**本專案的全部程式碼均由 AI 生成，作者沒有手寫任何一行程式碼，僅提供指示。** AI 依照作者的指示生成程式碼及後續修改；不將作者描述為手寫實作的程式設計者。
+
+這項聲明描述本專案程式碼的產生方式。libchewing 詞庫與 OpenCC 繁簡映射仍屬第三方來源資料，依下表及第三方聲明記錄其來源與授權，不改稱為 AI 原創資料。
+
 E-IME 以注音使用需求、操作行為觀察及公開的 Windows TSF／Win32 介面為實作依據。字詞資料與繁簡映射使用下表列出的第三方來源，並保留相應授權及轉換腳本。
 
 現有紀錄沒有建立可供核對的規格與實作人員隔離、資訊流管制及流程審查證據。因此，本專案不宣稱採用正式「淨室開發」（clean-room development），本文也不是合規稽核或法律認證。「自行實作」與「採用淨室流程」是不同層次的描述，不能互相替代。
@@ -17,7 +21,7 @@ E-IME 以注音使用需求、操作行為觀察及公開的 Windows TSF／Win32
 | 注音解析 | `Syllable`、`ZhuyinParser`，以字串槽位保存聲母、介音、韻母及聲調 | 標準大千排列與注音規則；[zhuyin.h](../engine/include/zhuyin.h) |
 | 詞彙查詢 | `ZhuyinTrie`，含詞頻與個人學習權重 | 專案內實作；[trie.h](../engine/include/trie.h) |
 | 組字與解碼 | `InputStateMachine`、`ViterbiDecoder`、`PinnedSegment` | 專案內的狀態機與動態規劃；[架構文件](ARCHITECTURE.md) |
-| 語境修正 | `compute_transition_score()` 中的有限人工字詞搭配規則 | 可在程式碼中檢查的人工規則，非訓練式模型 |
+| 語境修正 | `compute_transition_score()` 中的有限固定字詞搭配規則 | 可在程式碼中檢查的固定規則，非訓練式模型 |
 | 核心詞庫 | `data/core_dict.txt` | libchewing-data 衍生資料，LGPL-2.1-or-later，含專案詞彙合併及頻率調整 |
 | 繁簡映射 | `hanzi_conv.h` 內的單字元查表資料 | OpenCC 衍生資料，Apache-2.0；E-IME 轉換程式碼依 MIT 分發 |
 | 個人學習 | `SyncJournal` 每實例日誌、累計值新增量合併 | 專案內實作；[sync_journal.h](../sync/include/sync_journal.h) |

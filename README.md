@@ -8,6 +8,10 @@
 
 **目前是私人預覽階段。** 此 README 以 `feature/aggressive-correction` 為準；CMake 基礎版本仍為 `0.4.0`，功能分支尚未合併至 `master`。兩者的功能差異見 [文件索引與分支對照](docs/README.md)。
 
+## 開發方式
+
+**本專案的全部程式碼均由 AI 生成。作者沒有手寫任何一行程式碼，僅提供指示。** 程式碼的生成方式與第三方資料來源分別記錄於 [實作與來源紀錄](docs/IMPLEMENTATION_PROVENANCE.md) 及 [第三方聲明](THIRD_PARTY_NOTICES.md)。
+
 ## 想改善什麼
 
 設計出發點是沿用熟悉的注音操作，再改善日常使用中想自己調整、卻不容易處理的部分。
@@ -19,7 +23,7 @@
 | 候選字太小、選項太少，想調整顯示方式 | 候選字使用 24px 字級、38px 列高；本分支可展開最多四欄、每頁 36 項。樣式目前需修改原始碼。 |
 | 長句中某個詞選錯，想回頭改字 | 移動組字游標、開啟候選並鎖定手選詞，其餘未鎖定部分重新解碼；選字後仍能再次改選。 |
 | 快速打字時聲韻或聲調落鍵順序錯亂 | 支援聲韻槽位重排；本分支另對尚無詞庫匹配的已結音音節，嘗試補入晚到的介音或韻母。 |
-| 某些按鍵行為或輸入 bug 需要自行修正 | 自研程式碼採 MIT 授權，可重建 DLL、執行測試並用版本目錄部署。詞庫與映射資料另依第三方授權分發。 |
+| 某些按鍵行為或輸入 bug 需要自行修正 | 本專案程式碼採 MIT 授權，可重建 DLL、執行測試並用版本目錄部署。詞庫與映射資料另依第三方授權分發。 |
 
 E-IME 參考注音使用需求與操作行為進行實作，系統整合使用公開的 TSF／Win32 API；詞庫及繁簡字元映射來自開源專案。目前開發紀錄未建立可供核對的正式淨室隔離流程，因此不以「淨室開發」描述本專案。實作依據、資料來源及紀錄範圍見 [實作與來源紀錄](docs/IMPLEMENTATION_PROVENANCE.md) 及 [第三方聲明](THIRD_PARTY_NOTICES.md)。
 
@@ -64,7 +68,7 @@ pwsh -File .\scripts\install.ps1 -SourceDll .\build-msvc\Release\eime_tip.dll
 ## 支援範圍
 
 - 目前針對 Windows x64 與標準大千排列；未提供 32 位元 WoW64 模組或其他鍵盤排列。
-- 解碼以詞頻、局部鎖定及少量人工字詞搭配規則為主，尚無訓練式語言模型；不保證所有句子都能自動改對。
+- 解碼以詞頻、局部鎖定及少量固定字詞搭配規則為主，尚無訓練式語言模型；不保證所有句子都能自動改對。
 - 每次 CTest 有 5 組測試，核心套件含 15 項模組；TSF 自動測試使用 mock 宿主。自動測試通過不能替代記事本、瀏覽器、編輯器與多螢幕的實機觀察。
 - 個人日誌與快取不經 Git 傳送；`data/custom_words.txt` 是已追蹤的公開範例，加入私人詞彙後請留意不要提交。
 - 歷次測試的版本、範圍及證據見 [測試索引](testbench/README.md)，目前待驗證事項見 [研發紀錄與路線](docs/PROCESS_AND_ROADMAP.md)。
@@ -75,4 +79,4 @@ pwsh -File .\scripts\install.ps1 -SourceDll .\build-msvc\Release\eime_tip.dll
 
 核心邏輯在 `engine/include/`，TSF 外殼在 `tsf/`，候選窗在 `ui/`，學習日誌在 `sync/`；安裝腳本、資料產生器與測試分別位於 `scripts/`、`tools/`、`tests/` 及 `testbench/`。
 
-自研程式碼採 [MIT](LICENSE)；libchewing 衍生詞庫採 LGPL-2.1-or-later，OpenCC 衍生映射採 Apache-2.0。完整文本與作者聲明隨庫保存於 [LICENSES](LICENSES/)，使用範圍及重建方式見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+本專案程式碼採 [MIT](LICENSE)；libchewing 衍生詞庫採 LGPL-2.1-or-later，OpenCC 衍生映射採 Apache-2.0。完整文本與作者聲明隨庫保存於 [LICENSES](LICENSES/)，使用範圍及重建方式見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
