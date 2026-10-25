@@ -1,6 +1,5 @@
 #include "candidate_window.h"
 #include <algorithm>
-#include <sstream>
 
 namespace eime {
 
@@ -33,7 +32,7 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
 
     WNDCLASSEXW wc = {};
     wc.cbSize = sizeof(WNDCLASSEXW);
-    wc.style = CS_HREDRAW | CS_VREDRAW | CS_DROPSHADOW;
+    wc.style = CS_HREDRAW | CS_VREDRAW;
     wc.lpfnWndProc = CandidateWindow::wnd_proc;
     wc.hInstance = hInstance;
     wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
@@ -58,7 +57,7 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
         return false;
     }
 
-    // 啟用 Windows 11 現代圓角邊框 (DWMWA_WINDOW_CORNER_PREFERENCE = 33, DWMWCP_ROUND = 2)
+    // Keep a flat, square border without a DWM shadow.
     HMODULE hDwm = LoadLibraryW(L"dwmapi.dll");
     if (hDwm) {
         using DwmSetWindowAttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
@@ -66,6 +65,8 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
         if (fn) {
             DWORD preference = 1; // DWMWCP_DONOTROUND (強制直角)
             fn(hwnd_, 33, &preference, sizeof(preference));
+            DWORD rendering = 1; // DWMNCRP_DISABLED
+            fn(hwnd_, 2, &rendering, sizeof(rendering));
         }
         FreeLibrary(hDwm);
     }
@@ -81,7 +82,7 @@ bool CandidateWindow::create(HINSTANCE hInstance) {
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Microsoft JhengHei UI"
     );
     font_num_ = CreateFontW(
-        -16, 0, 0, 0, FW_BOLD, FALSE, FALSE, FALSE,
+        -12, 0, 0, 0, FW_NORMAL, FALSE, FALSE, FALSE,
         DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
         CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
     );
@@ -166,42 +167,15 @@ void CandidateWindow::recalculate_layout() {
         candidate_width = std::max(candidate_width, static_cast<int>(csz.cx));
     }
 
-    SelectObject(hdc, font_num_);
-    std::wstring page_tag;
-    if (total_pages_ > 1) {
-        page_tag = std::to_wstring(current_page_ + 1) + L"/" + std::to_wstring(total_pages_);
-    }
-    SIZE tag_sz = {0, 0};
-    if (!page_tag.empty()) {
-        GetTextExtentPoint32W(hdc, page_tag.c_str(), static_cast<int>(page_tag.size()), &tag_sz);
-    }
-
     SelectObject(hdc, old_font);
     ReleaseDC(hwnd_, hdc);
 
-    if (is_toast_) {
-        width_ = 140;
-        height_ = 44;
-        return;
-    }
-    const int item_h = 30;
-    int num_cols = 1;
-    if (cand_texts_.size() > 27) num_cols = 4;
-    else if (cand_texts_.size() > 18) num_cols = 3;
-    else if (cand_texts_.size() > 9) num_cols = 2;
-
-    int footer_h = (total_pages_ > 1) ? 24 : 8;
-
-    if (num_cols > 1) {
-        int col_width = std::max(120, candidate_width + 48);
-        width_ = col_width * num_cols + 24;
-        int max_rows = 9;
-        height_ = 12 + max_rows * item_h + footer_h;
-    } else {
-        int min_width = 160;
-        width_ = std::max({min_width, candidate_width + 80, static_cast<int>(tag_sz.cx) + 36});
-        height_ = 12 + static_cast<int>(cand_texts_.size()) * item_h + footer_h;
-    }
+    const int num_cols = std::max(1, static_cast<int>((cand_texts_.size() + 8) / 9));
+    const int col_width = std::max(96, candidate_width + 16);
+    const int rows = std::min(9, static_cast<int>(cand_texts_.size()));
+    // One shared row-number gutter; all candidate columns use the same width.
+    width_ = 2 + 24 + num_cols * col_width;
+    height_ = 4 + rows * 30 + (total_pages_ > 1 ? 20 : 2);
 }
 
 void CandidateWindow::show_at(int screen_x, int screen_y) {
@@ -259,7 +233,7 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
     FillRect(mem_dc, &rc, bg_brush);
     DeleteObject(bg_brush);
 
-    HPEN border_pen = CreatePen(PS_SOLID, 1, RGB(218, 220, 224));
+    HPEN border_pen = CreatePen(PS_SOLID, 1, RGB(128, 128, 128));
     HGDIOBJ old_pen = SelectObject(mem_dc, border_pen);
     HGDIOBJ old_brush = SelectObject(mem_dc, GetStockObject(NULL_BRUSH));
     Rectangle(mem_dc, 0, 0, w, h);
@@ -284,68 +258,58 @@ void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
     }
 
     const int item_h = 30;
-    int num_cols = 1;
-    if (cand_texts_.size() > 27) num_cols = 4;
-    else if (cand_texts_.size() > 18) num_cols = 3;
-    else if (cand_texts_.size() > 9) num_cols = 2;
+    const int gutter = 24;
+    const int num_cols = std::max(1, static_cast<int>((cand_texts_.size() + 8) / 9));
+    const int col_width = (w - 2 - gutter) / num_cols;
+    const size_t selected_row = selected_idx_ % 9;
+    const int rows = std::min(9, static_cast<int>(cand_texts_.size()));
 
-    int col_width = (num_cols > 1) ? ((w - 24) / num_cols) : (w - 24);
-
-    if (num_cols > 1) {
-        HPEN div_pen = CreatePen(PS_SOLID, 1, RGB(230, 230, 230));
-        HGDIOBJ old_p = SelectObject(mem_dc, div_pen);
-        for (int c = 1; c < num_cols; ++c) {
-            int div_x = 12 + c * col_width;
-            MoveToEx(mem_dc, div_x, 10, nullptr);
-            LineTo(mem_dc, div_x, h - 16);
+    // The row numbers apply to the active column, without repeating in each cell.
+    SelectObject(mem_dc, font_num_);
+    SetTextColor(mem_dc, RGB(32, 32, 32));
+    for (int row = 0; row < rows; ++row) {
+        const int y = 2 + row * item_h;
+        RECT number_rc = {1, y, 1 + gutter, y + item_h};
+        if (static_cast<size_t>(row) == selected_row && selected_idx_ < cand_texts_.size()) {
+            HBRUSH brush = CreateSolidBrush(RGB(153, 204, 238));
+            FillRect(mem_dc, &number_rc, brush);
+            DeleteObject(brush);
         }
-        SelectObject(mem_dc, old_p);
-        DeleteObject(div_pen);
+        wchar_t number[] = {static_cast<wchar_t>(L'1' + row), L'\0'};
+        DrawTextW(mem_dc, number, 1, &number_rc, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
     }
 
     for (size_t i = 0; i < cand_texts_.size(); ++i) {
-        int col = static_cast<int>(i / 9);
-        int row = static_cast<int>(i % 9);
-        int col_left = 12 + col * col_width;
-        int item_w = col_width - 6;
-        const int row_y = 6 + row * item_h;
-        int cur_x = col_left + 8;
-
+        const int col = static_cast<int>(i / 9);
+        const int row = static_cast<int>(i % 9);
+        const int x = 1 + gutter + col * col_width;
+        const int y = 2 + row * item_h;
+        RECT cell = {x, y, x + col_width, y + item_h};
         if (i == selected_idx_) {
-            RECT hi_rc = {col_left + 2, row_y, col_left + 2 + item_w, row_y + item_h};
-            HBRUSH hi_brush = CreateSolidBrush(RGB(235, 243, 252));
-            FillRect(mem_dc, &hi_rc, hi_brush);
-            DeleteObject(hi_brush);
-
-            RECT ind_rc = {col_left + 2, row_y + 4, col_left + 6, row_y + item_h - 4};
-            HBRUSH ind_brush = CreateSolidBrush(RGB(0, 103, 192));
-            FillRect(mem_dc, &ind_rc, ind_brush);
-            DeleteObject(ind_brush);
+            HBRUSH brush = CreateSolidBrush(RGB(153, 204, 238));
+            FillRect(mem_dc, &cell, brush);
+            DeleteObject(brush);
         }
-
-        SelectObject(mem_dc, font_num_);
-        SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 103, 192) : RGB(115, 115, 115));
-        int num_idx = static_cast<int>(row);
-        wchar_t num_buf[4] = {static_cast<wchar_t>(L'1' + num_idx), L'.', L' ', L'\0'};
-        RECT num_rc = {cur_x, row_y, cur_x + 22, row_y + item_h};
-        DrawTextW(mem_dc, num_buf, -1, &num_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
-
         SelectObject(mem_dc, font_cand_);
-        SetTextColor(mem_dc, (i == selected_idx_) ? RGB(0, 0, 0) : RGB(32, 32, 32));
-        RECT txt_rc = {cur_x + 24, row_y, col_left + item_w - 2, row_y + item_h};
-        DrawTextW(mem_dc, cand_texts_[i].c_str(), static_cast<int>(cand_texts_[i].size()), &txt_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+        SetTextColor(mem_dc, RGB(32, 32, 32));
+        RECT text_rc = {x + 8, y, x + col_width - 8, y + item_h};
+        DrawTextW(mem_dc, cand_texts_[i].c_str(), static_cast<int>(cand_texts_[i].size()),
+            &text_rc, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
     }
 
-    // 只有在多於 1 頁時才顯示頁碼（例如 1/2），不顯示 [繁] 或 [簡]
     if (total_pages_ > 1) {
-        std::wstringstream pss;
-        pss << (current_page_ + 1) << L"/" << total_pages_;
-        std::wstring page_str = pss.str();
-
+        RECT footer = {1, h - 21, w - 1, h - 1};
+        HBRUSH brush = CreateSolidBrush(RGB(242, 242, 242));
+        FillRect(mem_dc, &footer, brush);
+        DeleteObject(brush);
+        MoveToEx(mem_dc, 1, footer.top, nullptr);
+        LineTo(mem_dc, w - 1, footer.top);
+        const std::wstring page = std::to_wstring(current_page_ + 1) + L"/" + std::to_wstring(total_pages_);
         SelectObject(mem_dc, font_num_);
-        SetTextColor(mem_dc, RGB(130, 130, 130));
-        RECT page_rc = {14, h - 22, w - 14, h - 4};
-        DrawTextW(mem_dc, page_str.c_str(), static_cast<int>(page_str.size()), &page_rc, DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
+        SetTextColor(mem_dc, RGB(90, 90, 90));
+        RECT page_rc = {6, footer.top + 1, w - 6, h - 2};
+        DrawTextW(mem_dc, page.c_str(), static_cast<int>(page.size()), &page_rc,
+            DT_RIGHT | DT_VCENTER | DT_SINGLELINE);
     }
 
     BitBlt(hdc, 0, 0, w, h, mem_dc, 0, 0, SRCCOPY);
