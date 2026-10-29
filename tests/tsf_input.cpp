@@ -283,6 +283,37 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
     }
 
+    // Unmapped printable keys remain in the same composition, even before Zhuyin.
+    {
+        const auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_PLUS))); // = at idle
+        composition = context->composition();
+        CHECK(composition && !composition->is_ended());
+        CHECK(SUCCEEDED(type(sink, context, "su3")));
+        CHECK(SUCCEEDED(key(sink, context, VK_LEFT)));
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_7))); // '
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_5))); // backslash
+        CHECK(context->range()->current_text() == prefix + L"='\\你");
+        CHECK(context->composition() == composition && !composition->is_ended());
+        CHECK(context->property()->end - context->property()->start == 4);
+        CHECK(context->range()->document()->selection_start == prefix.size() + 3);
+        CHECK(SUCCEEDED(key(sink, context, VK_DELETE)));
+        CHECK(context->range()->current_text() == prefix + L"='\\");
+        CHECK(SUCCEEDED(key(sink, context, VK_DOWN)));
+        CHECK(SUCCEEDED(key(sink, context, '1'))); // literal candidate, not new Zhuyin
+        CHECK(context->range()->current_text() == prefix + L"='\\");
+        CHECK(context->composition() == composition && !composition->is_ended());
+        CHECK(SUCCEEDED(key(sink, context, VK_BACK)));
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+        CHECK(context->range()->current_text() == prefix + L"='");
+
+        CHECK(SUCCEEDED(key(sink, context, VK_NUMPAD5))); // numpad can start a composition
+        CHECK(context->composition() && !context->composition()->is_ended());
+        CHECK(SUCCEEDED(type(sink, context, "su3")));
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+        CHECK(context->range()->current_text() == prefix + L"='5你");
+    }
+
     // MS-IME typo phonotactic permutation ('k' ㄜ + '2' ㄉ -> 'ㄉㄜ', + '7' -> '的')
     CHECK(SUCCEEDED(type(sink, context, "k"))); // ㄜ
     CHECK(SUCCEEDED(type(sink, context, "2"))); // ㄉ -> reorders to ㄉㄜ
@@ -293,6 +324,19 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
 
     context->defer_edits = true;
+    // Ordinary symbols and spaces cannot overtake a queued Chinese commit.
+    {
+        const auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(type(sink, context, "su3\r")));
+        CHECK(SUCCEEDED(key(sink, context, VK_SPACE)));
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_PLUS)));
+        CHECK(SUCCEEDED(type(sink, context, "cl3")));
+        CHECK(SUCCEEDED(key(sink, context, VK_OEM_7)));
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+        CHECK(context->pending_count() == 1);
+        context->flush_edits();
+        CHECK(context->range()->current_text() == prefix + L"你 =好'");
+    }
     // A numpad digit must not overtake a commit waiting for an edit session.
     {
         auto before = context->range()->current_text();
@@ -379,6 +423,16 @@ int wmain(int argc, wchar_t** argv) {
     sm.process_special_key(eime::SpecialKey::Backspace, out);
     CHECK(sm.get_display_line() == "😀，你好");
     sm.reset();
+    CHECK(sm.process_key('=', out));
+    CHECK(out.empty() && sm.state() == eime::EngineState::Composing);
+    CHECK(sm.get_display_line() == "=");
+    CHECK(sm.process_special_key(eime::SpecialKey::DownArrow, out));
+    CHECK(sm.state() == eime::EngineState::CandidateOpen);
+    CHECK(sm.current_page_candidates().size() == 1);
+    CHECK(sm.current_page_candidates()[0].text == "=");
+    CHECK(sm.process_key('1', out));
+    CHECK(out.empty() && sm.get_display_line() == "=");
+    sm.reset();
     CHECK(sm.process_literal("😀", out));
     sm.process_special_key(eime::SpecialKey::Backspace, out);
     CHECK(sm.get_display_line().empty());
@@ -397,6 +451,6 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(out.empty() && sm.state() == eime::EngineState::Composing);
     CHECK(sm.get_display_line() == "你好 ");
     CoUninitialize();
-    std::cout << "PASS: numpad digits at caret with underline and queued-commit ordering, repeated Ctrl+comma (left/right held Ctrl and event snapshot), repeated candidate selection, FIFO burst (200 commits), English commit ordering, persistent underline, comma caret, Shift+1, discard phonetics, UTF-16 mixed buffer" << std::endl;
+    std::cout << "PASS: non-Zhuyin literals at idle/caret and candidate selection, queued symbol/space ordering, numpad digits at caret with underline and queued-commit ordering, repeated Ctrl+comma (left/right held Ctrl and event snapshot), repeated candidate selection, FIFO burst (200 commits), English commit ordering, persistent underline, comma caret, Shift+1, discard phonetics, UTF-16 mixed buffer" << std::endl;
     return 0;
 }

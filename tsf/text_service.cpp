@@ -315,16 +315,16 @@ bool EimeTextService::would_eat_key(const KeyInput& input) const {
     bool shift_down = input.shift;
     bool alt_down   = input.alt;
     if (alt_down) return false;
+    const bool ordered_input = state_machine_->state() != EngineState::Idle ||
+        edit_requested_ || draining_edits_ || !pending_edits_.empty();
 
     // Touch/remote input can arrive as resolved Unicode, including Ctrl+comma.
     // Letting such a packet pass inserts it outside the outstanding composition.
     if (wParam == VK_PACKET) {
         const auto& text = input.text;
         if (text.empty()) return false;
-        if (state_machine_->state() != EngineState::Idle || edit_requested_ || draining_edits_ || !pending_edits_.empty()) return true;
+        if (ordered_input) return true;
         if (state_machine_->mode() != InputMode::Chinese) return false;
-        // Start a new composition for punctuation; leave already-resolved ordinary
-        // Unicode text (for example from accessibility input) on its normal path.
         wchar_t wide[8] = {};
         WORD types[8] = {};
         int count = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, text.data(), static_cast<int>(text.size()), wide, 8);
@@ -358,11 +358,9 @@ bool EimeTextService::would_eat_key(const KeyInput& input) const {
         }
     }
 
-    // Printable keypad keys are literals, independent of the Zhuyin number row.
-    // Include queued commits so a host-inserted digit cannot overtake them.
+    // Keypad text is part of the Chinese composition, including at idle.
     if (is_keypad_text_key(wParam) && !input.text.empty()) {
-        return state_machine_->state() != EngineState::Idle || edit_requested_ ||
-               draining_edits_ || !pending_edits_.empty();
+        return state_machine_->mode() == InputMode::Chinese || ordered_input;
     }
 
     if (state_machine_->state() != EngineState::Idle) {
@@ -385,9 +383,11 @@ bool EimeTextService::would_eat_key(const KeyInput& input) const {
     }
 
     if (state_machine_->mode() == InputMode::English) {
-        return (state_machine_->state() != EngineState::Idle || edit_requested_ || draining_edits_ || !pending_edits_.empty()) && !input.text.empty();
+        return ordered_input && !input.text.empty();
     }
-    if (shift_down && !input.text.empty()) return true;
+    // Every printable key has an ordered composition path. A plain idle space
+    // stays with the host unless it would overtake a pending edit.
+    if (!input.text.empty()) return wParam != VK_SPACE || shift_down || ordered_input;
 
     char ch = vk_to_daqian_char(wParam);
     if (ch != '\0' && ch != ' ') {
@@ -602,8 +602,9 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
         }
         handled = state_machine_->process_ctrl_punctuation(ch, committed);
     } else if (auto text = input.text;
-               !text.empty() && (is_keypad_text_key(wParam) || shift_down || state_machine_->mode() == InputMode::English)) {
-        if ((is_keypad_text_key(wParam) || state_machine_->mode() == InputMode::English) && state_machine_->state() == EngineState::Idle) {
+               !text.empty() && (is_keypad_text_key(wParam) || shift_down || state_machine_->mode() == InputMode::English ||
+                   vk_to_daqian_char(wParam) == '\0' || (wParam == VK_SPACE && state_machine_->state() == EngineState::Idle))) {
+        if ((state_machine_->mode() == InputMode::English || wParam == VK_SPACE) && state_machine_->state() == EngineState::Idle) {
             // This literal follows an outstanding commit. Queue it behind that commit.
             committed = text;
             handled = true;

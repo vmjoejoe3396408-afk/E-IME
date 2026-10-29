@@ -611,6 +611,8 @@ public:
             }
         }
 
+        // Keep non-Zhuyin printable ASCII in the same editable buffer.
+        if (c >= ' ' && c <= '~') return process_literal(std::string(1, c), out_commit_text);
         return false;
     }
 
@@ -762,6 +764,7 @@ private:
                 }
                 candidate_page_ = 0;
                 selected_in_page_ = 0;
+                is_expanded_ = false;
                 state_ = EngineState::CandidateOpen;
             }
             return;
