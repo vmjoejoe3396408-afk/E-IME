@@ -15,6 +15,7 @@
 #include "../sync/include/sync_journal.h"
 #include "../ui/candidate_window.h"
 #include "display_attribute.h"
+#include "diagnostics.h"
 
 namespace eime {
 
@@ -22,6 +23,9 @@ extern HINSTANCE g_hInst;
 extern std::atomic<long> g_dllRefCount;
 
 struct EditSnapshot {
+#ifdef EIME_ENABLE_DIAGNOSTICS
+    std::uint64_t trace_id = 0, trace_key = 0;
+#endif
     std::string committed;
     std::string preview;
     std::string display_with_cursor;
@@ -74,6 +78,9 @@ public:
     static char vk_to_daqian_char(WPARAM vk);
 
 private:
+#ifdef EIME_ENABLE_DIAGNOSTICS
+    diag::Trace trace_;
+#endif
     ULONG ref_count_;
     ITfThreadMgr* thread_mgr_;
     TfClientId client_id_;

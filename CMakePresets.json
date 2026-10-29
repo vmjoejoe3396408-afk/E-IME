@@ -18,7 +18,8 @@
       "cacheVariables": {
         "BUILD_TESTING": "ON",
         "EIME_BUILD_TOOLS": "ON",
-        "CMAKE_BUILD_TYPE": "RelWithDebInfo"
+        "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+        "EIME_ENABLE_DIAGNOSTICS": "OFF"
       }
     },
     {
@@ -28,7 +29,8 @@
       "cacheVariables": {
         "BUILD_TESTING": "OFF",
         "EIME_BUILD_TOOLS": "OFF",
-        "CMAKE_BUILD_TYPE": "Release"
+        "CMAKE_BUILD_TYPE": "Release",
+        "EIME_ENABLE_DIAGNOSTICS": "OFF"
       }
     },
     {
@@ -58,6 +60,28 @@
       "inherits": "release",
       "generator": "Visual Studio 17 2022",
       "architecture": "x64"
+    },
+    {
+      "name": "diagnostic",
+      "hidden": true,
+      "inherits": "dev",
+      "cacheVariables": {
+        "EIME_ENABLE_DIAGNOSTICS": "ON"
+      }
+    },
+    {
+      "name": "msvc-diagnostic",
+      "inherits": [
+        "diagnostic",
+        "msvc-dev"
+      ]
+    },
+    {
+      "name": "mingw-diagnostic",
+      "inherits": [
+        "diagnostic",
+        "mingw-dev"
+      ]
     }
   ],
   "buildPresets": [
@@ -80,6 +104,16 @@
       "name": "msvc-release",
       "configurePreset": "msvc-release",
       "configuration": "Release"
+    },
+    {
+      "name": "msvc-diagnostic",
+      "configurePreset": "msvc-diagnostic",
+      "configuration": "RelWithDebInfo"
+    },
+    {
+      "name": "mingw-diagnostic",
+      "configurePreset": "mingw-diagnostic",
+      "configuration": "RelWithDebInfo"
     }
   ],
   "testPresets": [
@@ -97,6 +131,28 @@
     {
       "name": "msvc-dev",
       "configurePreset": "msvc-dev",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "msvc-diagnostic",
+      "configurePreset": "msvc-diagnostic",
+      "configuration": "RelWithDebInfo",
+      "output": {
+        "outputOnFailure": true
+      },
+      "execution": {
+        "noTestsAction": "error"
+      }
+    },
+    {
+      "name": "mingw-diagnostic",
+      "configurePreset": "mingw-diagnostic",
       "configuration": "RelWithDebInfo",
       "output": {
         "outputOnFailure": true

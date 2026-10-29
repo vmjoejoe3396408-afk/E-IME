@@ -1,6 +1,6 @@
 # 第三方資料與授權聲明
 
-E-IME 自行撰寫的程式碼採用 [MIT License](LICENSE)。以下資料保留各自的授權，MIT 不會取代其授權條件。完整授權文本隨原始碼置於 [LICENSES/](LICENSES/)，分發時請保留本文件及該目錄。
+E-IME 本專案程式碼採用 [MIT License](LICENSE)。以下資料保留各自的授權，MIT 不會取代其授權條件。完整授權文本隨原始碼置於 [LICENSES/](LICENSES/)，分發時請保留本文件及該目錄。
 
 ## libchewing-data
 
@@ -26,3 +26,12 @@ E-IME 自行撰寫的程式碼採用 [MIT License](LICENSE)。以下資料保留
 一般編譯直接使用庫內資料，不會下載上游檔案。兩支產生器均固定至上述 commit，可用 `--output <path>` 輸出至其他位置；執行 `python tools/verify_generated_data.py` 可在暫存目錄重建並比對庫內內容。
 
 本次準備的是原始碼預覽版。若另行分發 DLL 或安裝包，請一併提供上述授權、聲明、可編輯詞庫及與二進位檔相符的完整原始碼，並檢查所用編譯器及其靜態連結執行庫的分發聲明。不要把個人的 `custom_words.txt`、學習日誌、快取或 `data-root.txt` 包入發布檔。
+
+## Microsoft TraceLogging（僅診斷建置）
+
+- 專案：[microsoft/tracelogging](https://github.com/microsoft/tracelogging)。
+- 固定版本：`daaff5ffd5e3613f2c1a91f323350e98e93e80b3`。
+- 使用 `etw/cpp/traceloggingdynamic/TraceLoggingDynamic.h`，SHA-256：`6eb2a1e41cd335c8c00382284203ec81aea4fb58874cec6be2911c67c6f4c37c`。
+- 授權：[MIT](https://github.com/microsoft/tracelogging/blob/daaff5ffd5e3613f2c1a91f323350e98e93e80b3/LICENSE)，Copyright (c) Microsoft Corporation。
+- 診斷配置會下載未修改的標頭及完整授權至該建置目錄的 `_deps/microsoft-tracelogging/`，並驗證兩者雜湊。一般開發與產品配置不下載、不編譯此依賴。
+- 本專案自行實作的診斷接線由 AI 生成；上述第三方標頭為 Microsoft 程式碼。若另行分發診斷二進位，須隨附快取中的完整 MIT 授權。現行 Runtime 產物不含此依賴。

@@ -104,7 +104,10 @@ void EimeTextService::initialize_engine_resources() {
             data_dir = base_dir.parent_path() / "data";
         }
         if (std::filesystem::exists(data_dir / "core_dict.txt")) {
-            DictLoader::load_from_file(data_dir / "core_dict.txt", trie_, false);
+            const bool loaded = DictLoader::load_from_file(data_dir / "core_dict.txt", trie_, false);
+            EIME_TRACE(trace_.write("Dictionary", 0, 0, loaded, loaded ? S_OK : E_FAIL));
+        } else {
+            EIME_TRACE(trace_.write("Dictionary", 0, 0, 0, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)));
         }
         if (std::filesystem::exists(data_dir / "custom_words.txt")) {
             DictLoader::load_from_file(data_dir / "custom_words.txt", trie_, false);
@@ -116,6 +119,7 @@ void EimeTextService::initialize_engine_resources() {
         decoder_ = std::make_unique<ViterbiDecoder>(trie_);
         state_machine_ = std::make_unique<InputStateMachine>(trie_, *decoder_, journal_.get());
     } catch (...) {
+        EIME_TRACE(trace_.write("Initialization", 0, 0, 0, E_FAIL));
         if (!decoder_) {
             decoder_ = std::make_unique<ViterbiDecoder>(trie_);
         }
@@ -177,8 +181,8 @@ STDMETHODIMP EimeTextService::Activate(ITfThreadMgr* ptim, TfClientId tid) {
 
     ITfCategoryMgr* cat_mgr = nullptr;
     if (SUCCEEDED(CoCreateInstance(CLSID_TF_CategoryMgr, nullptr, CLSCTX_INPROC_SERVER, IID_ITfCategoryMgr, reinterpret_cast<void**>(&cat_mgr))) && cat_mgr) {
-        cat_mgr->RegisterGUID(GUID_EIME_DisplayAttr_Input, &atom_input_);
-        cat_mgr->RegisterGUID(GUID_EIME_DisplayAttr_Target, &atom_target_);
+        EIME_HOST_CALL("Attribute.RegisterInput", cat_mgr->RegisterGUID(GUID_EIME_DisplayAttr_Input, &atom_input_));
+        EIME_HOST_CALL("Attribute.RegisterTarget", cat_mgr->RegisterGUID(GUID_EIME_DisplayAttr_Target, &atom_target_));
         cat_mgr->Release();
     }
 
@@ -189,6 +193,7 @@ STDMETHODIMP EimeTextService::Deactivate() {
     tested_key_.reset();
     ctrl_keys_ = 0;
     ctrl_state_known_ = false;
+    EIME_TRACE(trace_.write("Cancel", 0, activation_generation_, pending_edits_.size()));
     ++activation_generation_;
     pending_edits_.clear();
     edit_requested_ = false;
@@ -425,6 +430,7 @@ std::string EimeTextService::printable_key(WPARAM vk, LPARAM lParam) {
 
 void EimeTextService::prepare_context(ITfContext* context) {
     if (edit_context_ == context) return;
+    EIME_TRACE(trace_.write("Cancel", 0, activation_generation_, pending_edits_.size()));
     ++activation_generation_;
     pending_edits_.clear();
     edit_requested_ = false;
@@ -444,6 +450,7 @@ void EimeTextService::prepare_context(ITfContext* context) {
 
 HRESULT EimeTextService::queue_edit(ITfContext* context, const std::string& committed) {
     EditSnapshot snapshot;
+    EIME_TRACE(snapshot.trace_id = trace_.next_edit(); snapshot.trace_key = trace_.key_id());
     snapshot.committed = committed;
     snapshot.preview = state_machine_->get_display_line();
     snapshot.display_with_cursor = state_machine_->get_display_line_with_cursor();
@@ -455,6 +462,7 @@ HRESULT EimeTextService::queue_edit(ITfContext* context, const std::string& comm
     snapshot.page = state_machine_->candidate_page();
     snapshot.pages = state_machine_->total_candidate_pages();
     snapshot.simplified = state_machine_->charset() == OutputCharset::Simplified;
+    EIME_TRACE(trace_.write("Enqueue", snapshot.trace_id, activation_generation_, pending_edits_.size() + 1));
     pending_edits_.push_back(std::move(snapshot));
     if (edit_requested_ || draining_edits_) return S_OK;
 
@@ -465,8 +473,11 @@ HRESULT EimeTextService::queue_edit(ITfContext* context, const std::string& comm
     if (hr == TF_E_SYNCHRONOUS || (SUCCEEDED(hr) && result == TF_E_SYNCHRONOUS)) {
         hr = context->RequestEditSession(client_id_, session, TF_ES_ASYNC | TF_ES_READWRITE, &result);
     }
+    EIME_TRACE(trace_.write("EditRequest", 0, activation_generation_, static_cast<ULONG>(result),
+        FAILED(hr) ? hr : result, "RequestEditSession"));
     session->Release();
     if (FAILED(hr) || FAILED(result)) {
+        EIME_TRACE(trace_.write("Cancel", 0, activation_generation_, pending_edits_.size()));
         edit_requested_ = false;
         pending_edits_.clear();
         state_machine_->reset();
@@ -476,13 +487,18 @@ HRESULT EimeTextService::queue_edit(ITfContext* context, const std::string& comm
 }
 
 void EimeTextService::drain_edit_sessions(TfEditCookie ec, ITfContext* context, unsigned long generation) {
-    if (generation != activation_generation_ || context != edit_context_ || draining_edits_) return;
+    if (generation != activation_generation_ || context != edit_context_ || draining_edits_) {
+        EIME_TRACE(trace_.write("StaleDrain", 0, generation, activation_generation_));
+        return;
+    }
     edit_requested_ = false;
     draining_edits_ = true;
     while (!pending_edits_.empty() && generation == activation_generation_) {
         auto snapshot = std::move(pending_edits_.front());
         pending_edits_.pop_front();
+        EIME_TRACE(trace_.begin(snapshot.trace_id, snapshot.trace_key, generation));
         execute_edit_session(ec, context, snapshot);
+        EIME_TRACE(trace_.end());
     }
     draining_edits_ = false;
 }
@@ -493,6 +509,7 @@ STDMETHODIMP EimeTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPAR
     observe_ctrl_key(wParam, lParam, true);
     observe_shift_key(wParam, lParam, true);
     const auto input = capture_key(wParam, lParam);
+    EIME_TRACE(trace_.key((input.ctrl ? 1u : 0u) | (input.shift ? 2u : 0u) | (input.alt ? 4u : 0u)));
     tested_key_.reset();
 
     if (wParam == VK_SHIFT || wParam == VK_LSHIFT || wParam == VK_RSHIFT) {
@@ -503,6 +520,7 @@ STDMETHODIMP EimeTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPAR
 
     shift_pressed_alone_ = false;
     *pfEaten = would_eat_key(input) ? TRUE : FALSE;
+    EIME_TRACE(trace_.write("Decision", 0, activation_generation_, *pfEaten));
     if (*pfEaten) tested_key_ = input;
     return S_OK;
 }
@@ -535,10 +553,12 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
     observe_shift_key(wParam, lParam, true);
     // Use the modifier/text snapshot accepted by OnTestKeyDown, even if the host
     // has advanced its keyboard state before delivering OnKeyDown.
-    const auto input = tested_key_ && tested_key_->vk == wParam
+    const bool tested = tested_key_ && tested_key_->vk == wParam;
+    const auto input = tested
         ? *tested_key_ : capture_key(wParam, lParam);
     tested_key_.reset();
     prepare_context(pic);
+    EIME_TRACE(if (!tested) trace_.key((input.ctrl ? 1u : 0u) | (input.shift ? 2u : 0u) | (input.alt ? 4u : 0u)));
 
     if (wParam == VK_SHIFT || wParam == VK_LSHIFT || wParam == VK_RSHIFT) {
         if (!(lParam & (1LL << 30))) shift_pressed_alone_ = !input.ctrl && !input.alt;
@@ -548,6 +568,7 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
     shift_pressed_alone_ = false;
 
     if (!would_eat_key(input)) {
+        EIME_TRACE(trace_.write("KeyPass", 0, activation_generation_));
         *pfEaten = FALSE;
         return S_OK;
     }
@@ -643,6 +664,7 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
         }
     }
 
+    EIME_TRACE(trace_.write("KeyResult", 0, activation_generation_, (handled ? 1u : 0u) | (static_cast<unsigned>(state_machine_->state()) << 8)));
     *pfEaten = handled ? TRUE : FALSE;
     if (handled) {
         return queue_edit(pic, committed);
@@ -681,6 +703,7 @@ STDMETHODIMP EimeTextService::OnPreservedKey(ITfContext* pic, REFGUID rguid, BOO
 }
 
 STDMETHODIMP EimeTextService::EnumDisplayAttributeInfo(IEnumTfDisplayAttributeInfo **ppEnum) {
+    EIME_TRACE(trace_.write("AttributeEnumerate", 0, activation_generation_));
     if (!ppEnum) return E_INVALIDARG;
     *ppEnum = nullptr;
 
@@ -713,6 +736,8 @@ STDMETHODIMP EimeTextService::EnumDisplayAttributeInfo(IEnumTfDisplayAttributeIn
 }
 
 STDMETHODIMP EimeTextService::GetDisplayAttributeInfo(REFGUID guid, ITfDisplayAttributeInfo **ppInfo) {
+    EIME_TRACE(trace_.write("AttributeLookup", 0, activation_generation_,
+        IsEqualGUID(guid, GUID_EIME_DisplayAttr_Input) ? 1 : IsEqualGUID(guid, GUID_EIME_DisplayAttr_Target) ? 2 : 0));
     if (!ppInfo) return E_INVALIDARG;
     *ppInfo = nullptr;
 
@@ -751,6 +776,7 @@ STDMETHODIMP EimeTextService::OnCompositionTerminated(TfEditCookie ecWrite, ITfC
     auto* ended = composition_;
     composition_ = nullptr;
     ended->Release();
+    EIME_TRACE(trace_.write("Cancel", 0, activation_generation_, pending_edits_.size()));
     ++activation_generation_;
     pending_edits_.clear();
     edit_requested_ = false;
@@ -762,30 +788,32 @@ STDMETHODIMP EimeTextService::OnCompositionTerminated(TfEditCookie ecWrite, ITfC
 }
 
 void EimeTextService::execute_edit_session(TfEditCookie ec, ITfContext* context, const EditSnapshot& snapshot) {
+    EIME_TRACE(trace_.snapshot(snapshot.trace_id, activation_generation_, snapshot.caret_offset,
+        snapshot.preview.size(), snapshot.committed.size()));
     const auto& committed_text = snapshot.committed;
     // 1. 若有已確認輸出的文字 (例如按下 Enter 或選字完成整句)，先寫入宿主並結束舊組字
     if (!committed_text.empty()) {
         std::wstring wcommit = CandidateWindow::utf8_to_wide(committed_text);
         if (composition_) {
             ITfRange* comp_range = nullptr;
-            if (SUCCEEDED(composition_->GetRange(&comp_range)) && comp_range) {
-                comp_range->SetText(ec, 0, wcommit.c_str(), static_cast<LONG>(wcommit.size()));
+            if (SUCCEEDED(EIME_HOST_CALL("Composition.GetRange", composition_->GetRange(&comp_range))) && comp_range) {
+                EIME_HOST_CALL("Commit.SetText", comp_range->SetText(ec, 0, wcommit.c_str(), static_cast<LONG>(wcommit.size())));
                 comp_range->Collapse(ec, TF_ANCHOR_END);
                 TF_SELECTION sel = {};
                 sel.range = comp_range;
                 sel.style.ase = TF_AE_NONE;
                 sel.style.fInterimChar = FALSE;
-                context->SetSelection(ec, 1, &sel);
+                EIME_HOST_CALL("Selection.Set", context->SetSelection(ec, 1, &sel));
                 comp_range->Release();
             }
             end_composition(ec);
         } else {
             TF_SELECTION sel = {};
             ULONG fetched = 0;
-            if (SUCCEEDED(context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) && fetched > 0 && sel.range) {
-                sel.range->SetText(ec, 0, wcommit.c_str(), static_cast<LONG>(wcommit.size()));
+            if (SUCCEEDED(EIME_HOST_CALL("Selection.Get", context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched))) && fetched > 0 && sel.range) {
+                EIME_HOST_CALL("Commit.Insert", sel.range->SetText(ec, 0, wcommit.c_str(), static_cast<LONG>(wcommit.size())));
                 sel.range->Collapse(ec, TF_ANCHOR_END);
-                context->SetSelection(ec, 1, &sel);
+                EIME_HOST_CALL("Selection.Set", context->SetSelection(ec, 1, &sel));
                 sel.range->Release();
             }
         }
@@ -796,8 +824,8 @@ void EimeTextService::execute_edit_session(TfEditCookie ec, ITfContext* context,
     if (inline_preview.empty()) {
         if (composition_) {
             ITfRange* comp_range = nullptr;
-            if (SUCCEEDED(composition_->GetRange(&comp_range)) && comp_range) {
-                comp_range->SetText(ec, 0, L"", 0);
+            if (SUCCEEDED(EIME_HOST_CALL("Composition.GetRange", composition_->GetRange(&comp_range))) && comp_range) {
+                EIME_HOST_CALL("Preview.Clear", comp_range->SetText(ec, 0, L"", 0));
                 comp_range->Release();
             }
             end_composition(ec);
@@ -809,11 +837,11 @@ void EimeTextService::execute_edit_session(TfEditCookie ec, ITfContext* context,
     // 若尚未建立 TSF Composition，啟動之
     if (!composition_) {
         ITfContextComposition* ctx_comp = nullptr;
-        if (SUCCEEDED(context->QueryInterface(IID_ITfContextComposition, reinterpret_cast<void**>(&ctx_comp))) && ctx_comp) {
+        if (SUCCEEDED(EIME_HOST_CALL("Composition.Query", context->QueryInterface(IID_ITfContextComposition, reinterpret_cast<void**>(&ctx_comp)))) && ctx_comp) {
             TF_SELECTION sel = {};
             ULONG fetched = 0;
-            if (SUCCEEDED(context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched)) && fetched > 0 && sel.range) {
-                ctx_comp->StartComposition(ec, sel.range, static_cast<ITfCompositionSink*>(this), &composition_);
+            if (SUCCEEDED(EIME_HOST_CALL("Selection.Get", context->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched))) && fetched > 0 && sel.range) {
+                EIME_HOST_CALL("Composition.Start", ctx_comp->StartComposition(ec, sel.range, static_cast<ITfCompositionSink*>(this), &composition_));
                 sel.range->Release();
             }
             ctx_comp->Release();
@@ -823,18 +851,18 @@ void EimeTextService::execute_edit_session(TfEditCookie ec, ITfContext* context,
     POINT caret_pt = get_fallback_caret_position();
     if (composition_) {
         ITfRange* comp_range = nullptr;
-        if (SUCCEEDED(composition_->GetRange(&comp_range)) && comp_range) {
+        if (SUCCEEDED(EIME_HOST_CALL("Composition.GetRange", composition_->GetRange(&comp_range))) && comp_range) {
             std::wstring winline = CandidateWindow::utf8_to_wide(inline_preview);
-            comp_range->SetText(ec, 0, winline.c_str(), static_cast<LONG>(winline.size()));
+            EIME_HOST_CALL("Preview.SetText", comp_range->SetText(ec, 0, winline.c_str(), static_cast<LONG>(winline.size())));
 
             // 1. 設置 TSF 實線顯示屬性 (GUID_PROP_ATTRIBUTE)
             ITfProperty* prop = nullptr;
-            if (atom_input_ != 0 && SUCCEEDED(context->GetProperty(GUID_PROP_ATTRIBUTE, &prop)) && prop) {
+            if (atom_input_ != 0 && SUCCEEDED(EIME_HOST_CALL("Underline.Property", context->GetProperty(GUID_PROP_ATTRIBUTE, &prop))) && prop) {
                 VARIANT var;
                 VariantInit(&var);
                 var.vt = VT_I4;
                 var.lVal = static_cast<LONG>(atom_input_);
-                prop->SetValue(ec, comp_range, &var);
+                EIME_HOST_CALL("Underline.Input", prop->SetValue(ec, comp_range, &var));
 
                 // 若處於選字狀態，為目標字/詞加上粗實線底線
                 if (atom_target_ != 0 && snapshot.candidates_open) {
@@ -846,7 +874,7 @@ void EimeTextService::execute_edit_session(TfEditCookie ec, ITfContext* context,
                         target_range->Collapse(ec, TF_ANCHOR_END);
                         target_range->ShiftEnd(ec, 1, &shifted2, nullptr);
                         var.lVal = static_cast<LONG>(atom_target_);
-                        prop->SetValue(ec, target_range, &var);
+                        EIME_HOST_CALL("Underline.Target", prop->SetValue(ec, target_range, &var));
                         target_range->Release();
                     }
                 }
@@ -866,14 +894,14 @@ void EimeTextService::execute_edit_session(TfEditCookie ec, ITfContext* context,
                 sel.range = sel_range;
                 sel.style.ase = TF_AE_NONE;
                 sel.style.fInterimChar = FALSE;
-                context->SetSelection(ec, 1, &sel);
+                EIME_HOST_CALL("Selection.Set", context->SetSelection(ec, 1, &sel));
 
                 // 嘗試透過 ITfContextView::GetTextExt 取得精確游標矩形 (Tier-1 Caret Tracking)
                 ITfContextView* view = nullptr;
-                if (SUCCEEDED(context->GetActiveView(&view)) && view) {
+                if (SUCCEEDED(EIME_HOST_CALL("View.Get", context->GetActiveView(&view))) && view) {
                     RECT rc_ext = {0, 0, 0, 0};
                     BOOL clipped = FALSE;
-                    if (SUCCEEDED(view->GetTextExt(ec, sel_range, &rc_ext, &clipped))) {
+                    if (SUCCEEDED(EIME_HOST_CALL("Caret.GetTextExt", view->GetTextExt(ec, sel_range, &rc_ext, &clipped)))) {
                         if (rc_ext.left != 0 || rc_ext.bottom != 0) {
                             caret_pt.x = rc_ext.left;
                             caret_pt.y = rc_ext.bottom + 4;
@@ -896,7 +924,7 @@ void EimeTextService::end_composition(TfEditCookie ec) {
     auto* ending = composition_;
     composition_ = nullptr;
     if (ending) {
-        ending->EndComposition(ec);
+        EIME_HOST_CALL("Composition.End", ending->EndComposition(ec));
         ending->Release();
     }
 }

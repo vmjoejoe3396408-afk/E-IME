@@ -33,6 +33,27 @@ jobs:
           if ($LASTEXITCODE) { throw 'Runtime staging failed' }
           pwsh -File scripts/verify-runtime.ps1 -Path out/runtime-msvc
           if ($LASTEXITCODE) { throw 'Runtime boundary failed' }
+      - name: Verify ETW diagnostic workflow
+        run: |
+          cmake --preset msvc-diagnostic
+          if ($LASTEXITCODE) { throw 'Diagnostic configure failed' }
+          cmake --build --preset msvc-diagnostic --parallel 2
+          if ($LASTEXITCODE) { throw 'Diagnostic build failed' }
+          ctest --preset msvc-diagnostic
+          if ($LASTEXITCODE) { throw 'Diagnostic tests failed' }
+          pwsh -File scripts/diagnose.ps1 -Action Verify -BuildDirectory build/msvc-diagnostic -OutputDirectory out/diagnostics-msvc
+          if ($LASTEXITCODE) { throw 'ETW verification failed' }
+      - name: Preserve synthetic ETW evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diagnostics-msvc
+          path: |
+            out/diagnostics-msvc/*.json
+            out/diagnostics-msvc/*.etl
+            out/diagnostics-msvc/*.txt
+          retention-days: 7
+          if-no-files-found: ignore
       - name: Verify pinned data
         env:
           PYTHONIOENCODING: utf-8
@@ -72,3 +93,25 @@ jobs:
       - name: Verify runtime boundary
         shell: pwsh
         run: pwsh -File scripts/verify-runtime.ps1 -Path out/runtime-mingw
+
+      - name: Build diagnostic variant
+        shell: msys2 {0}
+        run: |
+          set -e
+          cmake --preset mingw-diagnostic
+          cmake --build --preset mingw-diagnostic --parallel 2
+          ctest --preset mingw-diagnostic
+      - name: Verify ETW diagnostic workflow
+        shell: pwsh
+        run: pwsh -File scripts/diagnose.ps1 -Action Verify -BuildDirectory build/mingw-diagnostic -OutputDirectory out/diagnostics-mingw
+      - name: Preserve synthetic ETW evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: diagnostics-mingw
+          path: |
+            out/diagnostics-mingw/*.json
+            out/diagnostics-mingw/*.etl
+            out/diagnostics-mingw/*.txt
+          retention-days: 7
+          if-no-files-found: ignore

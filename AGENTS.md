@@ -29,6 +29,9 @@ Use PowerShell 7 on Windows. Shared entry points are in CMakePresets.json.
 - Install explicit Runtime files only; do not copy whole source/build/data trees.
 - Never package custom words, journals, caches or local data-root pointers.
 - Keep tool configuration and behavior fixtures in this repository; store generated diagnostics outside tracked sources.
-- Reuse established analysis tools. No diagnostics/fuzz preset is implied until its toolchain and checks actually exist.
+- ETW workflow: build/test `mingw-diagnostic` or `msvc-diagnostic`, then run `pwsh -File scripts/diagnose.ps1 -Action Verify -BuildDirectory build/<diagnostic-preset>`.
+- Verification records synthetic input in an isolated fixture and injects exactly one expected host error. Do not treat that deliberate failure as a production regression.
+- Real host capture requires explicitly installing the diagnostic DLL and reopening the host; release DLLs emit no events.
+- Reuse established analysis tools; see docs/DIAGNOSTICS.md. TTD/fuzz tooling is not implemented.
 
 See docs/DEVELOPMENT.md for build boundaries and remaining work.

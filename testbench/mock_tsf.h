@@ -12,6 +12,7 @@ namespace eime::test {
 
 class MockRange;
 struct MockDocument {
+    HRESULT set_text_result = S_OK; // Fault injection for host-write diagnostics.
     std::wstring text;
     std::vector<MockRange*> ranges;
     size_t selection_start = 0;
@@ -56,6 +57,7 @@ public:
     }
 
     STDMETHODIMP SetText(TfEditCookie, DWORD, const WCHAR* pchText, LONG cch) override {
+        if (FAILED(document_->set_text_result)) return document_->set_text_result;
         const std::wstring replacement = !pchText ? L"" : cch < 0 ? std::wstring(pchText) : std::wstring(pchText, static_cast<size_t>(cch));
         const size_t old_start = start_, old_end = end_;
         const auto delta = static_cast<ptrdiff_t>(replacement.size()) - static_cast<ptrdiff_t>(old_end - old_start);

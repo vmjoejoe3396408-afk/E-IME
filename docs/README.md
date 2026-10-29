@@ -11,6 +11,7 @@
 | 換機、建置、安裝、更新及移除 | [安裝與換機指南](SECOND_DEVICE_TEST.md) |
 | 理解資料流、解碼及部署 | [系統架構](ARCHITECTURE.md) |
 | 開發入口、產品建置與診斷工具邊界 | [開發指南](DEVELOPMENT.md) |
+| 錄製事件、定位宿主錯誤與查詢報告 | [診斷指南](DIAGNOSTICS.md) |
 | 查看變更與待辦 | [更新紀錄](CHANGELOG.md)、[研發紀錄與路線](PROCESS_AND_ROADMAP.md) |
 | 確認測試覆蓋與歷史證據 | [測試索引](../testbench/README.md) |
 | 確認實作依據、來源及授權 | [實作與來源紀錄](IMPLEMENTATION_PROVENANCE.md)、[第三方聲明](../THIRD_PARTY_NOTICES.md) |

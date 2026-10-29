@@ -1,6 +1,6 @@
 # 開發、產品與診斷的邊界
 
-目前採「同庫管理、分目標建置、分產物發布」。第一階段只整理建置與執行檔暫存，不改輸入行為，也尚未新增 ETW、TTD 或模糊測試引擎。
+目前採「同庫管理、分目標建置、分產物發布」。開發／產品建置已分離，另提供可選 ETW 診斷建置。診斷使用 Microsoft TraceLogging 與 Windows logman／tracerpt，沒有自建追蹤解碼器；TTD 與模糊測試引擎尚未接入。
 
 ## 共用入口
 
@@ -12,6 +12,7 @@
 | `msvc-dev` | Visual Studio 2022 x64 | 同上 |
 | `mingw-release` | MinGW-w64／Ninja | Release，停用全部測試與開發工具 |
 | `msvc-release` | Visual Studio 2022 x64 | 同上 |
+| `mingw-diagnostic`／`msvc-diagnostic` | 對應工具鏈 | ETW 埋點、開發工具、6 組測試；首次需下載固定版本依賴 |
 
 ```powershell
 cmake --preset mingw-dev
@@ -43,4 +44,4 @@ Runtime 僅包含 DLL、純文字核心詞庫、安裝／停用／解除註冊�
 - 產生的 trace、報表及重現附件放 `diagnostics/` 或 `out/`，不隨 Runtime 分發。
 - 接入每種工具前先確認具體要找的問題、現有工具鏈相容性與驗證方式，再新增對應目標及 CI。尚無功能的開關與 preset 不先建立。
 
-下一階段可先針對按鍵到提交佇列加入可啟閉的事件追蹤，再評估既有狀態式測試工具；本次沒有建立自訂分析平台。
+ETW 的驗證、實機錄製與報告查詢見 [診斷指南](DIAGNOSTICS.md)。後續可按實際問題評估既有狀態式測試工具。
