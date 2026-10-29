@@ -528,27 +528,20 @@ public:
                 }
             }
 
-            // 計算當前音節已輸入的注音符號數 (聲母+介音+韻母)
-            size_t current_symbol_count = (!current_syllable_.consonant.empty() ? 1 : 0) +
-                                         (!current_syllable_.medial.empty() ? 1 : 0) +
-                                         (!current_syllable_.rhyme.empty() ? 1 : 0);
-
-            // 在選字/按聲調出來以前，一個音節最多容納 3 個注音符號，嚴格拒絕第 4 個注音以提早中斷錯誤
-            if (current_symbol_count >= 3) {
-                ring_bell();
-                return true;
-            }
+            // Each category occupies one slot. Re-entering it corrects that
+            // slot, even when all three slots are occupied. Backspace removes
+            // the most recently edited slot, without restoring the typo.
+            auto set_component = [&](std::string& slot) {
+                slot = km.symbol;
+                component_order_.erase(std::remove(component_order_.begin(), component_order_.end(), km.category),
+                    component_order_.end());
+                component_order_.push_back(km.category);
+                state_ = EngineState::Composing;
+            };
 
             // 聲母 (21)
             if (km.category == ZhuyinParser::KeyMapping::Category::Consonant) {
-                // 一個音節僅能有一個聲母；若已存在聲母，直接拒絕並響鈴，不再自動提早斷字，提早中斷錯誤避免大量退格
-                if (!current_syllable_.consonant.empty()) {
-                    ring_bell();
-                    return true;
-                }
-                current_syllable_.consonant = km.symbol;
-                component_order_.push_back(km.category);
-                state_ = EngineState::Composing;
+                set_component(current_syllable_.consonant);
                 return true;
             }
 
@@ -570,14 +563,7 @@ public:
                         }
                     }
                 }
-                // 一個音節僅能有一個介音；若已存在介音，直接拒絕並響鈴
-                if (!current_syllable_.medial.empty()) {
-                    ring_bell();
-                    return true;
-                }
-                current_syllable_.medial = km.symbol;
-                component_order_.push_back(km.category);
-                state_ = EngineState::Composing;
+                set_component(current_syllable_.medial);
                 return true;
             }
 
@@ -599,14 +585,7 @@ public:
                         }
                     }
                 }
-                // 一個音節僅能有一個韻母；若已存在韻母，直接拒絕並響鈴
-                if (!current_syllable_.rhyme.empty()) {
-                    ring_bell();
-                    return true;
-                }
-                current_syllable_.rhyme = km.symbol;
-                component_order_.push_back(km.category);
-                state_ = EngineState::Composing;
+                set_component(current_syllable_.rhyme);
                 return true;
             }
         }

@@ -314,6 +314,18 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(context->range()->current_text() == prefix + L"='5你");
     }
 
+    // Correct a pending rhyme directly; a tone still closes this syllable.
+    {
+        const auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(type(sink, context, "c0l"))); // ㄏㄢ -> ㄏㄠ
+        CHECK(context->range()->current_text() == prefix + L"ㄏㄠ");
+        CHECK(SUCCEEDED(key(sink, context, VK_BACK)));
+        CHECK(context->range()->current_text() == prefix + L"ㄏ");
+        CHECK(SUCCEEDED(type(sink, context, "l3su3")));
+        CHECK(context->range()->current_text() == prefix + L"好你");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+    }
+
     // MS-IME typo phonotactic permutation ('k' ㄜ + '2' ㄉ -> 'ㄉㄜ', + '7' -> '的')
     CHECK(SUCCEEDED(type(sink, context, "k"))); // ㄜ
     CHECK(SUCCEEDED(type(sink, context, "2"))); // ㄉ -> reorders to ㄉㄜ
@@ -324,6 +336,13 @@ int wmain(int argc, wchar_t** argv) {
     CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
 
     context->defer_edits = true;
+    {
+        const auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(type(sink, context, "c0l3\r")));
+        CHECK(context->pending_count() == 1);
+        context->flush_edits();
+        CHECK(context->range()->current_text() == prefix + L"好");
+    }
     // Ordinary symbols and spaces cannot overtake a queued Chinese commit.
     {
         const auto prefix = context->range()->current_text();

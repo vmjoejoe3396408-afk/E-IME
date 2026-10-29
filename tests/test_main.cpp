@@ -513,9 +513,11 @@ bool test_phonotactics_typo_protection(eime::ZhuyinTrie& trie, const eime::Viter
     sm.process_key('w', out); // ㄊ (Consonant)
     EIME_ASSERT(sm.get_display_line() == "ㄊㄧㄢ", "順序錯亂輸入 u(ㄧ)+0(ㄢ)+w(ㄊ) 應自動重組為 ㄊㄧㄢ，實際為: " + sm.get_display_line());
 
-    // 2c. 嚴格拒絕第 4 個注音：滿 3 個注音後再打第 4 個 (例如 e ㄍ) 必須被拒絕，提早中斷錯誤
-    sm.process_key('e', out);
-    EIME_ASSERT(sm.get_display_line() == "ㄊㄧㄢ", "滿 3 個注音後按第 4 個注音必須被拒絕，實際為: " + sm.get_display_line());
+    // 2c. 三個槽位已滿時仍可直接修正韻母，無須先退格。
+    sm.process_key('p', out);
+    EIME_ASSERT(sm.get_display_line() == "ㄊㄧㄣ", "滿三個槽位後應能直接替換韻母");
+    sm.process_key('0', out);
+    EIME_ASSERT(sm.get_display_line() == "ㄊㄧㄢ", "應能反覆修正同一韻母而不新增音節");
 
     // 按下聲調鍵 (空白鍵一聲) 進行重新組合並選字為「天」
     sm.process_key(' ', out);
@@ -526,36 +528,50 @@ bool test_phonotactics_typo_protection(eime::ZhuyinTrie& trie, const eime::Viter
     for (char c : std::string("rup wu0 ")) sm.process_key(c, out);
     EIME_ASSERT(sm.composition_text() == "今天", "按聲調切分輸入 rup + 空格 + wu0 + 空格 應組出『今天』，實際為: " + sm.composition_text());
 
-    // 2e. 驗證若未按聲調就嘗試打第 4 個鍵 (例如 rup 後直接打 w)，第 4 個鍵會被提早中斷拒絕
+    // 2e. 未按聲調時，同類新按鍵修正目前音節，不提早切分為下一字。
     sm.reset();
     sm.process_key('r', out); // ㄐ
     sm.process_key('u', out); // ㄧ
     sm.process_key('p', out); // ㄣ
     EIME_ASSERT(sm.get_display_line() == "ㄐㄧㄣ", "rup 應為 ㄐㄧㄣ");
-    sm.process_key('w', out); // 嘗試打第 4 個注音 (ㄊ)
-    EIME_ASSERT(sm.get_display_line() == "ㄐㄧㄣ", "未按聲調前拒絕第 4 個注音，避免無限連打錯誤，實際為: " + sm.get_display_line());
+    sm.process_key('w', out);
+    EIME_ASSERT(sm.get_display_line() == "ㄊㄧㄣ", "新的聲母應替換目前聲母，保留介音與韻母");
+    sm.process_key('r', out);
     sm.process_key(' ', out); // 按空格一聲完成「今」
     EIME_ASSERT(sm.composition_text() == "今", "按空格後今字應上屏至組字區");
 
-    // 3. 已有聲母後再按聲母 (例如 1 ㄅ 後按 2 ㄉ) -> 應被拒絕
+    // 3. 已有聲母後再按聲母 (例如 1 ㄅ 後按 2 ㄉ) -> 直接替換
     sm.reset();
     sm.process_key('1', out);
     EIME_ASSERT(sm.get_display_line() == "ㄅ", "打 1 應為 ㄅ");
     sm.process_key('2', out);
-    EIME_ASSERT(sm.get_display_line() == "ㄅ", "已有聲母不可再接聲母，實際為: " + sm.get_display_line());
+    EIME_ASSERT(sm.get_display_line() == "ㄉ", "新的聲母應直接替換舊聲母");
 
-    // 4. 已有介音後再按介音 (例如 u ㄧ 後按 j ㄨ) -> 應被拒絕
+    // 4. 已有介音後再按介音 (例如 u ㄧ 後按 j ㄨ) -> 直接替換
     sm.reset();
     sm.process_key('u', out);
     EIME_ASSERT(sm.get_display_line() == "ㄧ", "打 u 應為 ㄧ");
     sm.process_key('j', out);
-    EIME_ASSERT(sm.get_display_line() == "ㄧ", "已有介音不可再接介音，實際為: " + sm.get_display_line());
+    EIME_ASSERT(sm.get_display_line() == "ㄨ", "新的介音應直接替換舊介音");
 
-    // 5. 已有韻母後再按韻母 (例如 8 ㄚ 後按 9 ㄞ) -> 應被拒絕
+    // 5. 重複修正韻母後，退格一次應清掉目前韻母，不恢復錯字。
     sm.reset();
     sm.process_key('8', out);
     sm.process_key('9', out);
-    EIME_ASSERT(sm.get_display_line() == "ㄚ", "已有韻母不可再接韻母，實際為: " + sm.get_display_line());
+    EIME_ASSERT(sm.get_display_line() == "ㄞ", "新的韻母應直接替換舊韻母");
+    sm.process_key('0', out);
+    sm.process_key('0', out);
+    sm.process_special_key(eime::SpecialKey::Backspace, out);
+    EIME_ASSERT(sm.get_display_line().empty(), "重複按同類符號不能累積成多次退格");
+
+    // 5b. 完整音節中修改介音，退格應先移除剛修正的介音。
+    sm.reset();
+    for (char c : std::string("su0jm")) sm.process_key(c, out);
+    EIME_ASSERT(sm.get_display_line() == "ㄋㄩㄢ", "介音應可在滿三槽位後反覆修正");
+    sm.process_special_key(eime::SpecialKey::Backspace, out);
+    EIME_ASSERT(sm.get_display_line() == "ㄋㄢ", "退格應移除最後編輯的介音，保留聲母與韻母");
+    sm.process_special_key(eime::SpecialKey::Backspace, out);
+    EIME_ASSERT(sm.get_display_line() == "ㄋ", "第二次退格應依其餘輸入順序移除韻母");
 
     // 6. 空音節按下聲調鍵 (3, 4, 6, 7) -> 應被攔截
     sm.reset();
