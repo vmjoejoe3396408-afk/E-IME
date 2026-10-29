@@ -88,6 +88,8 @@ pwsh -File .\scripts\install.ps1 -SourceDll .\build-msvc\Release\eime_tip.dll
 
 ## 文件與原始碼
 
+開發與產品使用不同的 [CMake presets](CMakePresets.json)；測試、CLI 與診斷工具不納入 Runtime 暫存目錄。建置入口及邊界驗證見 [開發指南](docs/DEVELOPMENT.md)。
+
 [文件索引／分支差異](docs/README.md) · [操作指南](docs/USAGE.md) · [安裝與換機](docs/SECOND_DEVICE_TEST.md) · [系統架構](docs/ARCHITECTURE.md) · [更新紀錄](docs/CHANGELOG.md)
 
 核心邏輯在 `engine/include/`，TSF 外殼在 `tsf/`，候選窗在 `ui/`，學習日誌在 `sync/`；安裝腳本、資料產生器與測試分別位於 `scripts/`、`tools/`、`tests/` 及 `testbench/`。

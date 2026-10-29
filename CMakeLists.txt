@@ -6,6 +6,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 include(CTest)
+option(EIME_BUILD_TOOLS "Build development utilities (not installed)" ${BUILD_TESTING})
 
 if (WIN32)
     add_compile_definitions(NOMINMAX)
@@ -28,18 +29,9 @@ if (MINGW)
     add_link_options(-static -static-libgcc -static-libstdc++)
 endif()
 
-# 1. 終端互動模擬器與效能基準測試 (eime_cli.exe)
-add_executable(eime_cli
-    cli/main.cpp
-)
-
-# 2. 自動化單元與整合測試套件 (eime_tests.exe)
-add_executable(eime_tests
-    tests/test_main.cpp
-    ui/candidate_window.cpp
-)
-if (WIN32)
-    target_link_libraries(eime_tests PRIVATE user32 gdi32 ole32 uuid)
+# Developer utilities are separate from the product and its install rules.
+if (EIME_BUILD_TOOLS)
+    add_executable(eime_cli cli/main.cpp)
 endif()
 
 # 3. Windows TSF COM 系統輸入法核心元件 (eime_tip.dll)
@@ -53,7 +45,6 @@ if (WIN32)
         tsf/text_service.cpp
         tsf/register.cpp
         ui/candidate_window.cpp
-        "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.rc"
     )
     # windres invokes its preprocessor through an ANSI command line. The icon
     # needs no headers; omit source include paths from that command entirely.
@@ -65,6 +56,19 @@ if (WIN32)
         OUTPUT_NAME "eime_tip"
     )
     if (MINGW)
+        # windres also loses Unicode in the RC source path passed to its C
+        # preprocessor. Compile relative inputs in the build directory.
+        add_custom_command(OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.o"
+            COMMAND "${CMAKE_RC_COMPILER}" -O coff -i eime_resources.rc -o eime_resources.o
+            WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+            DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.rc"
+                "${CMAKE_CURRENT_BINARY_DIR}/eime.ico"
+            VERBATIM)
+        add_custom_target(eime_resources DEPENDS "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.o")
+        add_dependencies(eime_tsf eime_resources)
+        target_link_options(eime_tsf PRIVATE eime_resources.o)
+        set_property(TARGET eime_tsf APPEND PROPERTY LINK_DEPENDS
+            "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.o")
         # GCC/ld may lose non-ASCII characters in an absolute .def filename.
         configure_file(tsf/eime_tip.def "${CMAKE_CURRENT_BINARY_DIR}/eime_tip.def" COPYONLY)
         target_link_options(eime_tsf PRIVATE eime_tip.def)
@@ -81,7 +85,7 @@ if (WIN32)
             target_link_options(eime_tsf PRIVATE "-Wl,--undefined=__mingw_fe_dfl_env")
         endif()
     else()
-        target_sources(eime_tsf PRIVATE tsf/eime_tip.def)
+        target_sources(eime_tsf PRIVATE tsf/eime_tip.def "${CMAKE_CURRENT_BINARY_DIR}/eime_resources.rc")
     endif()
     target_link_libraries(eime_tsf PRIVATE
         user32
@@ -92,28 +96,43 @@ if (WIN32)
         advapi32
     )
 
-    # 4. 全自動化壓力與混沌測試基準 (eime_testbench.exe)
-    add_executable(eime_testbench
-        testbench/stress_suite.cpp
-        ui/candidate_window.cpp
-    )
-    target_link_libraries(eime_testbench PRIVATE
-        user32
-        gdi32
-    )
-
-    add_executable(eime_tsf_lifecycle tests/tsf_lifecycle.cpp)
-    target_link_libraries(eime_tsf_lifecycle PRIVATE ole32 oleaut32 uuid user32)
-    add_executable(eime_tsf_input tests/tsf_input.cpp)
-    target_link_libraries(eime_tsf_input PRIVATE ole32 oleaut32 uuid user32)
-    if(MINGW)
-        target_link_options(eime_tsf_lifecycle PRIVATE -municode)
-        target_link_options(eime_tsf_input PRIVATE -municode)
-    endif()
+    # Runtime is an explicit allowlist; never copy a build/source directory.
+    install(TARGETS eime_tsf RUNTIME DESTINATION . COMPONENT Runtime)
+    install(FILES data/core_dict.txt DESTINATION data COMPONENT Runtime)
+    install(FILES scripts/install.ps1 scripts/disable.ps1 scripts/uninstall.ps1
+        DESTINATION scripts COMPONENT Runtime)
+    install(FILES "安裝或重新註冊 E-IME.cmd" LICENSE THIRD_PARTY_NOTICES.md
+        DESTINATION . COMPONENT Runtime)
+    install(FILES LICENSES/Apache-2.0.txt LICENSES/GPL-2.0.txt
+        LICENSES/LGPL-2.1.txt LICENSES/OpenCC-AUTHORS.txt
+        DESTINATION LICENSES COMPONENT Runtime)
+    install(FILES docs/RUNTIME_PACKAGE.md DESTINATION . RENAME README.md COMPONENT Runtime)
 endif()
 
 # Every invocation gets fresh data, including repeated/parallel CTest runs.
 if (BUILD_TESTING)
+    add_executable(eime_tests tests/test_main.cpp ui/candidate_window.cpp)
+    if (WIN32)
+        target_link_libraries(eime_tests PRIVATE user32 gdi32 ole32 uuid)
+        # 4. 全自動化壓力與混沌測試基準 (eime_testbench.exe)
+        add_executable(eime_testbench
+            testbench/stress_suite.cpp
+            ui/candidate_window.cpp
+        )
+        target_link_libraries(eime_testbench PRIVATE
+            user32
+            gdi32
+        )
+
+        add_executable(eime_tsf_lifecycle tests/tsf_lifecycle.cpp)
+        target_link_libraries(eime_tsf_lifecycle PRIVATE ole32 oleaut32 uuid user32)
+        add_executable(eime_tsf_input tests/tsf_input.cpp)
+        target_link_libraries(eime_tsf_input PRIVATE ole32 oleaut32 uuid user32)
+        if(MINGW)
+            target_link_options(eime_tsf_lifecycle PRIVATE -municode)
+            target_link_options(eime_tsf_input PRIVATE -municode)
+        endif()
+    endif()
     add_executable(eime_sync_tests tests/sync_journal.cpp)
     function(eime_add_test name target)
         set(dll_option "")

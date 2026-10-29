@@ -8,6 +8,7 @@ $clsid = '{D8E42B10-7A5C-4E91-9B2A-1F3C5D7E9A01}'
 $profile = "Software\Microsoft\CTF\TIP\$clsid\LanguageProfile\0x00000404\{D8E42B11-7A5C-4E91-9B2A-1F3C5D7E9A01}"
 if (-not $SourceDll) {
     $candidates = @(
+        (Join-Path $PSScriptRoot '..\eime_tip.dll'),
         (Join-Path $PSScriptRoot '..\build\eime_tip.dll'),
         (Join-Path $PSScriptRoot '..\build\Release\eime_tip.dll'),
         (Join-Path $PSScriptRoot '..\build_out\eime_tip.dll')
