@@ -69,9 +69,9 @@ flowchart TD
 
 ## 詞庫與日誌
 
-初始化先依 DLL 旁的 `data-root.txt` 決定資料目錄，否則查找 DLL 旁或上層的 `data/`。安裝器會把來源專案的 `data/` 寫入該檔案，因此部署後仍依賴原資料目錄。
+核心詞庫優先載入 DLL 旁的 `data/core_dict.txt`；安裝器會把它複製至本機版本目錄，避免開機時雲端硬碟尚未掛載而只剩注音。未提供本機詞庫時，沿用 `data-root.txt` 或 DLL 上層 `data/` 的舊路徑。
 
-`DictLoader` 載入 `core_dict.txt` 及選用的 `custom_words.txt`，使用 `.bin` 作快取。這個分支對初始化例外採降級處理，且仍有個人開發目錄的詞庫保底路徑；換機成功應以新機實際資料及輸出驗證，不能只靠 COM 建立成功判定。相關清理列在 [路線與待辦](PROCESS_AND_ROADMAP.md)。
+`data-root.txt` 繼續指向原資料目錄，供選用的 `custom_words.txt` 及 `sync/` 使用；該目錄不可用時，已載入的本機核心詞庫仍可組字。個人資料不搬移、不隨核心詞庫複製。`DictLoader` 使用 `.bin` 作快取；初始化仍有降級處理，因此換機成功須以實際輸出驗證，不能只靠 COM 建立成功判定。
 
 每個 `SyncJournal` 有自己的 writer ID，使用 `device_<hostname>_<writer-id>.delta`：
 
@@ -86,6 +86,6 @@ flowchart TD
 
 CMake 建置 CLI、核心測試、壓力測試、同步回歸、TSF 生命週期／輸入測試及 DLL。COM 的四個標準匯出列於 [eime_tip.def](../tsf/eime_tip.def)；MSVC 使用靜態 CRT 與 UTF-8 原始碼設定，MinGW 靜態連結 C++ runtime。
 
-安裝器以 SHA-256 將 DLL 複製到 `%LOCALAPPDATA%\E-IME\versions\<hash>\eime_tip.dll`，避免覆寫已載入版本，再執行 COM／TSF 註冊及使用者覆寫。目前版本另嘗試加入既有 `zh-Hant*` 語言項目的 `InputMethodTips`，失敗會顯示警告。已開啟的宿主仍持有舊 DLL，更新後需重新開啟。
+安裝器將 DLL 與核心詞庫複製到 `%LOCALAPPDATA%\E-IME\versions\<DLL SHA-256>-<詞庫 SHA-256 前 16 碼>/`，核對完整雜湊後再執行 COM／TSF 註冊及使用者覆寫。詞庫內容更新也會建立新版本目錄，不覆寫已載入 DLL 或其他版本資料。目前版本另嘗試加入既有 `zh-Hant*` 語言項目的 `InputMethodTips`，失敗會顯示警告。已開啟的宿主仍持有舊 DLL，更新後需重新開啟。
 
 測試覆蓋與實機限制見 [測試索引](../testbench/README.md)。

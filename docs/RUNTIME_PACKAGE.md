@@ -8,7 +8,7 @@
 pwsh -File .\scripts\install.ps1 -SourceDll .\eime_tip.dll
 ```
 
-也可使用根目錄的「安裝或重新註冊 E-IME.cmd」。安裝器需要時會要求管理員權限；安裝後重新開啟宿主，以 Win+Space 選擇 E-IME。詞庫仍指向此目錄的 `data/`，請保留它。
+也可使用根目錄的「安裝或重新註冊 E-IME.cmd」。安裝器需要時會要求管理員權限；安裝後重新開啟宿主，以 Win+Space 選擇 E-IME。核心詞庫會隨 DLL 複製至本機版本目錄；個人自訂詞及學習資料仍使用此目錄的 `data/`，請保留它。
 
 此目錄不含自訂詞、學習日誌、快取、測試或分析工具。停用與解除註冊分別執行 `scripts/disable.ps1`、`scripts/uninstall.ps1`。
 

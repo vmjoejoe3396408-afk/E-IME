@@ -22,10 +22,15 @@ if (-not $SourceDll) {
 }
 $SourceDll = (Resolve-Path -LiteralPath $SourceDll).Path
 $hash = (Get-FileHash -LiteralPath $SourceDll -Algorithm SHA256).Hash.ToLowerInvariant()
-# Never register a mutable build output or overwrite a DLL already mapped in hosts.
-$versionDir = Join-Path $env:LOCALAPPDATA "E-IME\versions\$hash"
-$installedDll = Join-Path $versionDir 'eime_tip.dll'
 $dataRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot '..\data')).Path
+$sourceDictionary = Join-Path $dataRoot 'core_dict.txt'
+if ((Get-Item -LiteralPath $sourceDictionary).Length -eq 0) { throw 'Core dictionary is empty.' }
+$dictionaryHash = (Get-FileHash -LiteralPath $sourceDictionary -Algorithm SHA256).Hash.ToLowerInvariant()
+# Keep the DLL and its core dictionary local, including before cloud drives mount.
+# Include dictionary identity so data updates also create a new immutable bundle.
+$bundle = $hash + '-' + $dictionaryHash.Substring(0, 16)
+$versionDir = Join-Path $env:LOCALAPPDATA "E-IME\versions\$bundle"
+$installedDll = Join-Path $versionDir 'eime_tip.dll'
 New-Item -ItemType Directory -Path $versionDir -Force | Out-Null
 if (Test-Path -LiteralPath $installedDll) {
     if ((Get-FileHash -LiteralPath $installedDll).Hash.ToLowerInvariant() -ne $hash) {
@@ -33,6 +38,18 @@ if (Test-Path -LiteralPath $installedDll) {
     }
 } else {
     Copy-Item -LiteralPath $SourceDll -Destination $installedDll
+}
+if ((Get-FileHash -LiteralPath $installedDll -Algorithm SHA256).Hash.ToLowerInvariant() -ne $hash) {
+    throw 'Copied DLL hash mismatch; refusing to register this bundle.'
+}
+$installedData = Join-Path $versionDir 'data'
+New-Item -ItemType Directory -Path $installedData -Force | Out-Null
+$installedDictionary = Join-Path $installedData 'core_dict.txt'
+if (-not (Test-Path -LiteralPath $installedDictionary)) {
+    Copy-Item -LiteralPath $sourceDictionary -Destination $installedDictionary
+}
+if ((Get-FileHash -LiteralPath $installedDictionary -Algorithm SHA256).Hash.ToLowerInvariant() -ne $dictionaryHash) {
+    throw 'Installed dictionary hash mismatch; refusing to register this bundle.'
 }
 $rootFile = Join-Path $versionDir 'data-root.txt'
 if (Test-Path -LiteralPath $rootFile) {
@@ -93,3 +110,4 @@ try {
 }
 Write-Host "[E-IME] Installed immutable version: $installedDll"
 Write-Host "[E-IME] SHA256: $hash"
+Write-Host "[E-IME] Local core dictionary: $installedDictionary"

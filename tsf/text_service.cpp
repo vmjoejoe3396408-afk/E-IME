@@ -103,13 +103,18 @@ void EimeTextService::initialize_engine_resources() {
         } else if (!std::filesystem::exists(data_dir / "core_dict.txt")) {
             data_dir = base_dir.parent_path() / "data";
         }
-        if (std::filesystem::exists(data_dir / "core_dict.txt")) {
-            const bool loaded = DictLoader::load_from_file(data_dir / "core_dict.txt", trie_, false);
+        // An installed core dictionary must not depend on a cloud/mapped drive.
+        // data-root.txt continues to locate personal words and learning journals.
+        std::error_code data_error;
+        auto core_path = base_dir / "data" / "core_dict.txt";
+        if (!std::filesystem::exists(core_path, data_error)) core_path = data_dir / "core_dict.txt";
+        if (std::filesystem::exists(core_path, data_error)) {
+            const bool loaded = DictLoader::load_from_file(core_path, trie_, false);
             EIME_TRACE(trace_.write("Dictionary", 0, 0, loaded, loaded ? S_OK : E_FAIL));
         } else {
             EIME_TRACE(trace_.write("Dictionary", 0, 0, 0, HRESULT_FROM_WIN32(ERROR_FILE_NOT_FOUND)));
         }
-        if (std::filesystem::exists(data_dir / "custom_words.txt")) {
+        if (std::filesystem::exists(data_dir / "custom_words.txt", data_error)) {
             DictLoader::load_from_file(data_dir / "custom_words.txt", trie_, false);
         }
 

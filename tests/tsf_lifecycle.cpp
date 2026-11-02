@@ -1,6 +1,8 @@
 #include <windows.h>
 #include <msctf.h>
 #include <iostream>
+#include <filesystem>
+#include <fstream>
 #include "../tsf/guids.h"
 #include "../tsf/display_attribute.h"
 #include "../testbench/mock_tsf.h"
@@ -8,9 +10,58 @@ namespace eime { std::atomic<long> g_dllRefCount{0}; }
 
 #define CHECK(x) do { if (!(x)) { std::cerr << "FAIL line " << __LINE__ << ": " #x << std::endl; return 1; } } while (0)
 
+static int verify_offline_dictionary(const std::filesystem::path& source_dll) {
+    namespace fs = std::filesystem;
+    const auto fixture = fs::absolute(fs::path("offline-install"));
+    fs::create_directories(fixture / "data");
+    fs::copy_file(source_dll, fixture / "eime_tip.dll");
+    {
+        std::ofstream dictionary(fixture / "data" / "core_dict.txt", std::ios::binary);
+        dictionary << "你\tㄋㄧˇ\t100\n好\tㄏㄠˇ\t100\n你好\tㄋㄧˇ ㄏㄠˇ\t1000\n";
+        CHECK(dictionary.good());
+    }
+    const auto unavailable = fixture / "unavailable-drive";
+    { std::ofstream marker(unavailable); marker << "not a directory"; CHECK(marker.good()); }
+    {
+        std::ofstream pointer(fixture / "data-root.txt", std::ios::binary);
+        const auto utf8 = unavailable.u8string();
+        pointer.write(reinterpret_cast<const char*>(utf8.data()), static_cast<std::streamsize>(utf8.size()));
+        CHECK(pointer.good());
+    }
+    auto dll = LoadLibraryW((fixture / "eime_tip.dll").c_str());
+    CHECK(dll);
+    auto get = reinterpret_cast<HRESULT(WINAPI*)(REFCLSID, REFIID, void**)>(GetProcAddress(dll, "DllGetClassObject"));
+    CHECK(get);
+    IClassFactory* factory = nullptr;
+    CHECK(SUCCEEDED(get(eime::CLSID_EIME_TextService, IID_IClassFactory, reinterpret_cast<void**>(&factory))));
+    ITfTextInputProcessor* tip = nullptr;
+    CHECK(SUCCEEDED(factory->CreateInstance(nullptr, IID_ITfTextInputProcessor, reinterpret_cast<void**>(&tip))));
+    factory->Release();
+    auto* manager = new eime::test::MockThreadMgr();
+    auto* context = new eime::test::MockContext();
+    CHECK(SUCCEEDED(tip->Activate(manager, 1001)));
+    BYTE state[256] = {};
+    CHECK(SetKeyboardState(state));
+    for (char key : std::string("SU3CL3")) {
+        BOOL eaten = FALSE;
+        CHECK(SUCCEEDED(manager->key_sink()->OnKeyDown(context, key, 0, &eaten)) && eaten);
+    }
+    CHECK(context->range()->current_text() == L"你好");
+    BOOL eaten = FALSE;
+    CHECK(SUCCEEDED(manager->key_sink()->OnKeyDown(context, VK_DOWN, 0, &eaten)) && eaten);
+    CHECK(SUCCEEDED(manager->key_sink()->OnKeyDown(context, VK_RETURN, 0, &eaten)) && eaten);
+    CHECK(context->range()->current_text() == L"你好");
+    CHECK(SUCCEEDED(tip->Deactivate()));
+    tip->Release(); context->Release(); manager->Release();
+    CHECK(FreeLibrary(dll));
+    std::cout << "PASS: local core dictionary converts and selects with unavailable personal data root" << std::endl;
+    return 0;
+}
+
 int wmain(int argc, wchar_t** argv) {
     CHECK(argc >= 2);
     CHECK(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)));
+    CHECK(verify_offline_dictionary(argv[1]) == 0);
     for (int cycle = 0; cycle < 25; ++cycle) {
         HMODULE dll = LoadLibraryW(argv[1]);
         if (!dll) std::cerr << "LoadLibrary error " << GetLastError() << std::endl;
