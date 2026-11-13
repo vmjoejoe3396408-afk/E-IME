@@ -143,10 +143,12 @@ try {
         $scenario = Join-Path $OutputDirectory 'scenario'
         Push-Location $scenario
         try {
+            $previousPrivateData = $env:EIME_PRIVATE_DATA_DIR
+            $env:EIME_PRIVATE_DATA_DIR = Join-Path $scenario 'private'
             & ./eime_trace_scenario.exe (Join-Path $scenario 'build/eime_tip.dll') |
                 Set-Content -LiteralPath (Join-Path $OutputDirectory 'scenario.txt')
             if ($LASTEXITCODE) { throw "Diagnostic scenario failed: $LASTEXITCODE" }
-        } finally { Pop-Location }
+        } finally { $env:EIME_PRIVATE_DATA_DIR = $previousPrivateData; Pop-Location }
     } else {
         Write-Host "Recording for $Seconds seconds. Reproduce the issue in a newly opened diagnostic host."
         Start-Sleep -Seconds $Seconds

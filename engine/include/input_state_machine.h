@@ -84,6 +84,32 @@ public:
     size_t candidate_target_idx() const { return candidate_target_idx_; }
     size_t candidate_page() const { return candidate_page_; }
     size_t selected_in_page() const { return selected_in_page_; }
+    WordReading candidate_word(size_t index_in_page) const {
+        const size_t index = candidate_page_ * candidates_per_page() + index_in_page;
+        if (state_ != EngineState::CandidateOpen || index >= candidates_.size()) return {};
+        return {candidates_[index].text, reading_for(committed_syllables_, candidate_starts_[index], candidates_[index].syllable_length)};
+    }
+    std::vector<WordReading> composition_words() const {
+        std::vector<WordReading> result;
+        for (size_t i = 0; i < last_viterbi_.per_syllable_chars.size(); ++i)
+            result.push_back({last_viterbi_.per_syllable_chars[i], reading_for(committed_syllables_, i, 1)});
+        return result;
+    }
+    void refresh_user_preferences() {
+        const bool open = state_ == EngineState::CandidateOpen;
+        const bool expanded = is_expanded_;
+        const auto selected = candidate_word(selected_in_page_);
+        update_viterbi();
+        if (open) { open_candidates_at_cursor(); is_expanded_ = expanded; focus_candidate(selected); }
+    }
+    void focus_candidate(const WordReading& word) {
+        if (state_ != EngineState::CandidateOpen || word.reading.empty()) return;
+        for (size_t i = 0; i < candidates_.size(); ++i) {
+            if (candidates_[i].text == word.text && reading_for(committed_syllables_, candidate_starts_[i], candidates_[i].syllable_length) == word.reading) {
+                candidate_page_ = i / candidates_per_page(); selected_in_page_ = i % candidates_per_page(); return;
+            }
+        }
+    }
 
     // 計算游標在 UTF-16 寬字元組字字串中的偏移量
     size_t cursor_utf16_offset() const {
@@ -818,10 +844,11 @@ private:
             committed_syllables_.begin() + static_cast<std::ptrdiff_t>(pin_start),
             committed_syllables_.begin() + static_cast<std::ptrdiff_t>(pin_start + chosen.syllable_length)
         );
-        if (journal_) {
-            journal_->record_learning(trie_, sub_syllables, chosen.text, 1);
-        } else {
-            trie_.apply_user_delta(sub_syllables, chosen.text, 1);
+        // Private additions stay in the private overlay. Recording them in the
+        // legacy journal would resurrect deleted words and leak local vocabulary.
+        if (!trie_.is_private_word(sub_syllables, chosen.text)) {
+            if (journal_) journal_->record_learning(trie_, sub_syllables, chosen.text, 1);
+            else trie_.apply_user_delta(sub_syllables, chosen.text, 1);
         }
 
         // 2. 移除與新鎖定區間重疊的舊鎖定，並加入新的 PinnedSegment

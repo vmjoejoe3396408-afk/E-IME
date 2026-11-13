@@ -85,6 +85,10 @@ flowchart TD
 
 ## 建置與部署
 
+私人詞庫與手動順位由 `UserPreferencesStore` 管理，預設位於本機 `%LOCALAPPDATA%/E-IME/user/preferences.tsv`。每次修改取得具路徑識別的跨程序 mutex，重新讀取並合併最新資料，再將完整 UTF-8 快照寫入暫存檔、flush 後替換。詞彙、讀音與序列化格式皆驗證；失敗不更新記憶體狀態，不覆寫損壞原檔。新增詞以 Trie 私人覆蓋層參與解碼，不污染基礎詞頻；私人詞不寫入舊學習日誌，刪除後可完整移除該覆蓋層。固定順位只影響同讀音候選排序，優先於有效詞頻，不改寫原始詞頻或以巨大分數強迫自動組句。
+
+候選右鍵以畫面快照中的原始字詞／注音定位，避免繁簡顯示轉換與延遲 edit session 造成指錯詞。造詞視窗使用原生 Windows 控制項，保留開窗前的組字快照並以 UTF-16 選取範圍帶入字詞與注音。原生 UI 不直接修改宿主文字；回到 TSF 時僅在原 context 與 activation generation 仍相符時排入更新，防止巢狀訊息迴圈切換焦點後寫錯宿主。
+
 CMake 建置 CLI、核心測試、壓力測試、同步回歸、TSF 生命週期／輸入測試及 DLL。COM 的四個標準匯出列於 [eime_tip.def](../tsf/eime_tip.def)；MSVC 使用靜態 CRT 與 UTF-8 原始碼設定，MinGW 靜態連結 C++ runtime。
 
 安裝器將 DLL 與核心詞庫複製到 `%LOCALAPPDATA%\E-IME\versions\<DLL SHA-256>-<詞庫 SHA-256 前 16 碼>/`，核對完整雜湊後再執行 COM／TSF 註冊及使用者覆寫。詞庫內容更新也會建立新版本目錄，不覆寫已載入 DLL 或其他版本資料。目前版本另嘗試加入既有 `zh-Hant*` 語言項目的 `InputMethodTips`，失敗會顯示警告。已開啟的宿主仍持有舊 DLL，更新後需重新開啟。

@@ -8,11 +8,11 @@
 
 | Preset | 工具鏈 | 內容 |
 | --- | --- | --- |
-| `mingw-dev` | MinGW-w64／Ninja | RelWithDebInfo、產品、CLI 與 5 組測試 |
+| `mingw-dev` | MinGW-w64／Ninja | RelWithDebInfo、產品、CLI 與 6 組測試 |
 | `msvc-dev` | Visual Studio 2022 x64 | 同上 |
 | `mingw-release` | MinGW-w64／Ninja | Release，停用全部測試與開發工具 |
 | `msvc-release` | Visual Studio 2022 x64 | 同上 |
-| `mingw-diagnostic`／`msvc-diagnostic` | 對應工具鏈 | ETW 埋點、開發工具、6 組測試；首次需下載固定版本依賴 |
+| `mingw-diagnostic`／`msvc-diagnostic` | 對應工具鏈 | ETW 埋點、開發工具、7 組測試；首次需下載固定版本依賴 |
 
 ```powershell
 cmake --preset mingw-dev

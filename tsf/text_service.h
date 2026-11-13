@@ -16,6 +16,7 @@
 #include "../ui/candidate_window.h"
 #include "display_attribute.h"
 #include "diagnostics.h"
+#include "../sync/include/user_preferences_store.h"
 
 namespace eime {
 
@@ -37,6 +38,8 @@ struct EditSnapshot {
     size_t page = 0;
     size_t pages = 0;
     bool simplified = false;
+    std::vector<WordReading> menu_candidates;
+    std::vector<WordReading> composition_words;
 };
 
 class EimeTextService : public ITfTextInputProcessor,
@@ -95,6 +98,13 @@ private:
     std::unique_ptr<InputStateMachine> state_machine_;
     CandidateWindow candidate_window_;
     CandidateWindow mode_toast_;
+    std::shared_ptr<UserPreferencesStore> user_preferences_;
+    std::vector<WordReading> menu_candidates_;
+    std::vector<WordReading> menu_composition_;
+    unsigned long menu_generation_ = 0;
+    bool personal_ui_active_ = false;
+    void reload_user_preferences(bool force = false);
+    void handle_candidate_menu(size_t index, POINT position);
 
     void show_charset_toast();
 

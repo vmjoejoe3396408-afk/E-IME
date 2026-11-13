@@ -46,6 +46,7 @@ if (WIN32)
         tsf/text_service.cpp
         tsf/register.cpp
         ui/candidate_window.cpp
+        ui/user_dictionary_dialog.cpp
     )
     # windres invokes its preprocessor through an ANSI command line. The icon
     # needs no headers; omit source include paths from that command entirely.
@@ -139,6 +140,8 @@ if (BUILD_TESTING)
         target_link_libraries(eime_tsf_lifecycle PRIVATE ole32 oleaut32 uuid user32)
         add_executable(eime_tsf_input tests/tsf_input.cpp)
         target_link_libraries(eime_tsf_input PRIVATE ole32 oleaut32 uuid user32)
+        add_executable(eime_private_ui tests/user_dictionary_ui.cpp ui/user_dictionary_dialog.cpp ui/candidate_window.cpp)
+        target_link_libraries(eime_private_ui PRIVATE user32 gdi32)
         if (EIME_ENABLE_DIAGNOSTICS)
             add_executable(eime_trace_scenario tests/trace_scenario.cpp)
             target_link_libraries(eime_trace_scenario PRIVATE ole32 oleaut32 uuid user32)
@@ -177,6 +180,7 @@ if (BUILD_TESTING)
         eime_add_test(stress eime_testbench)
         eime_add_test(tsf_lifecycle eime_tsf_lifecycle)
         eime_add_test(tsf_input eime_tsf_input)
+        eime_add_test(private_ui eime_private_ui)
         if (EIME_ENABLE_DIAGNOSTICS)
             eime_add_test(tsf_trace eime_trace_scenario)
         endif()

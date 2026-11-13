@@ -1,6 +1,7 @@
 #pragma once
 
 #include "zhuyin.h"
+#include "user_preferences.h"
 #include <string>
 #include <vector>
 #include <memory>
@@ -17,6 +18,7 @@ struct WordCandidate {
     uint32_t user_boost = 0;      // 來自使用者個人學習 / 跨裝置同步的增量詞頻
     double log_prob = -100.0;     // log((base + user_boost * K) / total_freq)
     size_t syllable_length = 0;   // 此詞佔用的音節數
+    int manual_rank = -1; // Per-reading candidate order, independent of frequency.
 
     uint64_t effective_frequency() const {
         // 使用者主動選過的詞給予顯著加權 (1 次選字相當於基礎詞頻 +250,000)
@@ -24,6 +26,9 @@ struct WordCandidate {
     }
 
     bool operator<(const WordCandidate& other) const {
+        if (manual_rank != other.manual_rank && (manual_rank >= 0 || other.manual_rank >= 0)) {
+            return manual_rank >= 0 && (other.manual_rank < 0 || manual_rank < other.manual_rank);
+        }
         if (effective_frequency() != other.effective_frequency()) {
             return effective_frequency() > other.effective_frequency();
         }
@@ -40,6 +45,21 @@ public:
     };
 
     ZhuyinTrie() : root_(std::make_unique<Node>()), total_frequency_(0), word_count_(0) {}
+
+    void set_user_preferences(const UserPreferences& preferences) {
+        UserPreferences next_preferences = preferences;
+        auto next_words = std::make_unique<ZhuyinTrie>();
+        for (const auto& [reading, text] : preferences.words) {
+            if (valid_user_word(reading, text))
+                next_words->insert(ZhuyinParser::parse_multi_syllables(reading), text, 1000000);
+        }
+        next_words->finalize_probabilities();
+        std::swap(preferences_, next_preferences);
+        user_words_ = std::move(next_words);
+    }
+    bool is_private_word(const std::vector<Syllable>& syllables, const std::string& text) const {
+        return preferences_.words.contains({reading_for(syllables, 0, syllables.size()), text});
+    }
 
     // 插入系統基礎詞彙
     void insert(const std::vector<Syllable>& syllables, const std::string& text, uint32_t freq) {
@@ -110,9 +130,10 @@ public:
     // 精確查詢：給定完整注音序列，回傳所有精確匹配的候選詞（已按權重由高到低排序）
     std::vector<WordCandidate> lookup_exact(const std::vector<Syllable>& syllables) const {
         Node* node = find_node(syllables);
-        if (!node || !node->is_word) return {};
-
-        std::vector<WordCandidate> result = node->words;
+        std::vector<WordCandidate> result;
+        if (node && node->is_word) result = node->words;
+        if (user_words_) merge_personal(result, user_words_->lookup_exact(syllables));
+        apply_preferences(result, syllables, 0);
         std::sort(result.begin(), result.end());
         return result;
     }
@@ -141,6 +162,8 @@ public:
             }
         }
 
+        if (user_words_) merge_personal(results, user_words_->lookup_prefixes(syllables, start_idx, false));
+        apply_preferences(results, syllables, start_idx);
         if (prefer_longer_for_candidates) {
             std::sort(results.begin(), results.end(), [](const WordCandidate& a, const WordCandidate& b) {
                 if (a.syllable_length != b.syllable_length) {
@@ -158,6 +181,35 @@ public:
     size_t word_count() const { return word_count_; }
 
 private:
+    UserPreferences preferences_;
+    std::unique_ptr<ZhuyinTrie> user_words_;
+    void merge_personal(std::vector<WordCandidate>& target, const std::vector<WordCandidate>& words) const {
+        for (auto word : words) {
+            auto found = std::find_if(target.begin(), target.end(), [&](const auto& current) {
+                return current.text == word.text && current.syllable_length == word.syllable_length;
+            });
+            if (found != target.end()) {
+                found->base_frequency = std::max(found->base_frequency, word.base_frequency);
+                found->log_prob = std::log(static_cast<double>(found->effective_frequency()) /
+                    static_cast<double>(std::max<uint64_t>(1, total_frequency_)) + 1e-12);
+            } else {
+                word.log_prob = std::log(static_cast<double>(word.effective_frequency()) /
+                    static_cast<double>(std::max<uint64_t>({1, total_frequency_, user_words_->total_frequency()})) + 1e-12);
+                target.push_back(std::move(word));
+            }
+        }
+    }
+    void apply_preferences(std::vector<WordCandidate>& words, const std::vector<Syllable>& syllables, size_t start) const {
+        for (auto& word : words) {
+            const auto reading = reading_for(syllables, start, word.syllable_length);
+            word.manual_rank = -1;
+            auto group = preferences_.ranks.find(reading);
+            if (group != preferences_.ranks.end()) {
+                auto found = std::find(group->second.begin(), group->second.end(), word.text);
+                if (found != group->second.end()) word.manual_rank = static_cast<int>(found - group->second.begin());
+            }
+        }
+    }
     std::unique_ptr<Node> root_;
     uint64_t total_frequency_;
     size_t word_count_;

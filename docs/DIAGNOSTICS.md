@@ -13,7 +13,7 @@ ctest --preset mingw-diagnostic
 pwsh -File scripts/diagnose.ps1 -Action Verify -BuildDirectory build/mingw-diagnostic
 ```
 
-MSVC 改為 `msvc-diagnostic`。首次診斷配置需要網路，下載固定版本／SHA-256 的 Microsoft 標頭及 MIT 授權；產品配置維持離線。診斷版有 6 組測試，產品版仍不建立測試。
+MSVC 改為 `msvc-diagnostic`。首次診斷配置需要網路，下載固定版本／SHA-256 的 Microsoft 標頭及 MIT 授權；產品配置維持離線。診斷版有 7 組測試，產品版仍不建立測試。
 
 Verify 先把測試程式、DLL 與核心詞庫複製到獨立資料夾，不讀寫個人學習資料、不註冊輸入法、不發送桌面按鍵。錄製 ETW 時需要管理員權限，腳本會在必要時要求 UAC 並用隱藏的子程序錄製。
 

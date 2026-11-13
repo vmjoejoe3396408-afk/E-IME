@@ -3,6 +3,7 @@
 #include "../engine/include/trie.h"
 #include <string>
 #include <vector>
+#include <functional>
 
 #ifdef _WIN32
 #ifndef WIN32_LEAN_AND_MEAN
@@ -12,6 +13,7 @@
 #endif
 
 namespace eime {
+enum class CandidateCommand { None = 0, Top, Up, Down, Reset, CreateWord, Manage };
 
 class CandidateWindow {
 public:
@@ -41,6 +43,9 @@ public:
 
 #ifdef _WIN32
     HWND hwnd() const { return hwnd_; }
+    std::function<void(size_t, POINT)> context_menu;
+    size_t hit_test(int x, int y) const;
+    CandidateCommand choose_menu(bool rankable, POINT screen_position);
 #endif
 
     static std::wstring utf8_to_wide(const std::string& str);

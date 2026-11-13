@@ -16,13 +16,14 @@ ctest --test-dir build -C Release --output-on-failure
 
 | CTest 名稱 | 來源 | 覆蓋範圍 |
 | --- | --- | --- |
-| `core` | [test_main.cpp](../tests/test_main.cpp) | 15 個核心模組：解析、局部鎖定、同步、候選窗建立、COM、繁簡、快取、游標、重選、聲調提早修正、多欄候選及標點 |
+| `core` | [test_main.cpp](../tests/test_main.cpp) | 18 個核心模組：解析、局部鎖定、同步、候選窗、COM、繁簡、快取、游標、重選、聲調修正、多欄候選、標點、成詞保留、句尾順位與私人資料交易 |
 | `sync_journal` | [sync_journal.cpp](../tests/sync_journal.cpp) | 同機多實例、壓縮、重啟、舊格式、半行、失敗寫入、計數上限及 800 筆並行學習 |
 | `stress` | [stress_suite.cpp](stress_suite.cpp) | 22,000 次擊鍵、8 執行緒日誌、40 音節解碼、繁簡轉換及 5,000 次隨機輸入 |
 | `tsf_lifecycle` | [tsf_lifecycle.cpp](../tests/tsf_lifecycle.cpp) | 25 次載入／卸載、500 組提交／取消、顯示屬性生命週期及過期回呼 |
 | `tsf_input` | [tsf_input.cpp](../tests/tsf_input.cpp) | 小鍵盤、標點與修飾鍵快照、FIFO 提交、重選、底線、UTF-16 及右側繁簡快捷鍵 |
+| `private_ui` | [user_dictionary_ui.cpp](../tests/user_dictionary_ui.cpp) | 原生造詞視窗、UTF-16 選取範圍、注音帶入、按鈕儲存、清單回填與控制項邊界 |
 
-[run_test.cmake](../tests/run_test.cmake) 每次建立獨立資料副本及受測 DLL；成功後清理該次目錄，失敗時保留路徑供檢查。使用 CTest 可避免舊學習紀錄改變候選順位，也不會讀寫使用者的實際日誌。
+[run_test.cmake](../tests/run_test.cmake) 每次建立獨立資料副本及受測 DLL，私人詞庫另放在本機暫存目錄，以便驗證實際檔案鎖定與替換語意；成功後清理該次目錄，失敗時保留兩處路徑供檢查。使用 CTest 可避免舊學習紀錄改變候選順位，也不會讀寫使用者的實際日誌或私人詞庫。
 
 2026-10-25 本機重新建置並執行上述功能基準，**5／5 組通過**，含兩組並行測試。環境為 Windows 10 x64、MinGW-w64 UCRT GCC 16.1.0、CMake 4.4.0、PowerShell 7.6.5。本次僅修改文件，未執行管理員安裝或新版桌面視覺驗證。
 

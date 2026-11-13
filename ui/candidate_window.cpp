@@ -219,6 +219,35 @@ bool CandidateWindow::is_visible() const {
     return hwnd_ && IsWindowVisible(hwnd_);
 }
 
+size_t CandidateWindow::hit_test(int x, int y) const {
+    if (is_toast_ || x < 1 || x >= width_ - 1 || y < 2) return static_cast<size_t>(-1);
+    const int columns = std::max(1, static_cast<int>((cand_texts_.size() + 8) / 9));
+    const int cell_width = (width_ - 26) / columns;
+    const int row = (y - 2) / 30;
+    const int column = x < 25 ? 0 : (x - 25) / cell_width;
+    const size_t index = static_cast<size_t>(column * 9 + row);
+    return row < 9 && column < columns && index < cand_texts_.size() ? index : static_cast<size_t>(-1);
+}
+
+CandidateCommand CandidateWindow::choose_menu(bool rankable, POINT position) {
+    HMENU menu = CreatePopupMenu();
+    if (!menu) return CandidateCommand::None;
+    auto add = [&](CandidateCommand command, const wchar_t* title, bool enabled = true) {
+        AppendMenuW(menu, MF_STRING | (enabled ? MF_ENABLED : MF_GRAYED), static_cast<UINT_PTR>(command), title);
+    };
+    add(CandidateCommand::Top, L"在同音候選中置頂", rankable);
+    add(CandidateCommand::Up, L"在同音候選中上移", rankable);
+    add(CandidateCommand::Down, L"在同音候選中下移", rankable);
+    add(CandidateCommand::Reset, L"這組注音恢復自動排序", rankable);
+    AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
+    add(CandidateCommand::CreateWord, L"造詞：選取組字範圍…");
+    add(CandidateCommand::Manage, L"管理私人詞庫與固定順位…");
+    const UINT command = TrackPopupMenuEx(menu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+        position.x, position.y, hwnd_, nullptr);
+    DestroyMenu(menu);
+    return static_cast<CandidateCommand>(command);
+}
+
 void CandidateWindow::on_paint(HDC hdc, const RECT& rc) {
     int w = rc.right - rc.left;
     int h = rc.bottom - rc.top;
@@ -338,6 +367,20 @@ LRESULT CALLBACK CandidateWindow::wnd_proc(HWND hwnd, UINT msg, WPARAM wp, LPARA
             return DefWindowProcW(hwnd, msg, wp, lp);
         case WM_MOUSEACTIVATE:
             return MA_NOACTIVATE; // 滑鼠點擊時絕不搶焦點
+        case WM_CONTEXTMENU:
+            if (self && !self->is_toast_ && self->context_menu) {
+                POINT point = {static_cast<short>(LOWORD(lp)), static_cast<short>(HIWORD(lp))};
+                size_t index = self->selected_idx_;
+                if (point.x == -1 && point.y == -1) {
+                    point = {25, 2}; ClientToScreen(hwnd, &point);
+                } else {
+                    POINT client = point; ScreenToClient(hwnd, &client);
+                    index = self->hit_test(client.x, client.y);
+                }
+                auto callback = self->context_menu;
+                callback(index, point);
+            }
+            return 0;
         case WM_TIMER:
             if (wp == 999) {
                 KillTimer(hwnd, 999);

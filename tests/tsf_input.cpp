@@ -5,6 +5,7 @@
 #include "../testbench/mock_tsf.h"
 #include "../engine/include/input_state_machine.h"
 #include "../engine/include/dict_loader.h"
+#include "../sync/include/user_preferences_store.h"
 
 #define CHECK(x) do { if (!(x)) { std::cerr << "FAIL line " << __LINE__ << ": " #x << std::endl; return 1; } } while (0)
 
@@ -435,6 +436,29 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(context->range()->current_text() == expected);
     }
 
+    // A running DLL reloads a private word on the next input and manual ranks
+    // when opening candidates, even if another instance wrote the preference.
+    {
+        wchar_t private_root[32768] = {};
+        CHECK(GetEnvironmentVariableW(L"EIME_PRIVATE_DATA_DIR", private_root, 32768));
+        eime::UserPreferencesStore private_store(private_root);
+        CHECK(private_store.save_word("ㄒㄧˋ ㄉㄨㄣˋ ㄐㄧㄚˇ", "矽盾甲"));
+        context->defer_edits = false;
+        auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(type(sink, context, "vu42jp4ru83")));
+        CHECK(context->range()->current_text() == prefix + L"矽盾甲");
+        CHECK(SUCCEEDED(key(sink, context, VK_DOWN)));
+        CHECK(SUCCEEDED(key(sink, context, '1')));
+        CHECK(context->range()->current_text() == prefix + L"矽盾甲");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+        prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(type(sink, context, "su3")));
+        CHECK(private_store.reorder("ㄋㄧˇ", "妳", eime::RankAction::Top, {"你", "妳"}));
+        CHECK(SUCCEEDED(key(sink, context, VK_DOWN)));
+        CHECK(SUCCEEDED(key(sink, context, '1')));
+        CHECK(context->range()->current_text() == prefix + L"妳");
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+    }
     CHECK(SUCCEEDED(tip->Deactivate()));
     tip->Release(); context->Release(); mgr->Release();
     CHECK(unload() == S_OK);

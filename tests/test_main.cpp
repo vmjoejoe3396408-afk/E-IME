@@ -16,6 +16,7 @@
 #include "../engine/include/dict_loader.h"
 #include "../engine/include/input_state_machine.h"
 #include "../sync/include/sync_journal.h"
+#include "../sync/include/user_preferences_store.h"
 #include "../ui/candidate_window.h"
 #include "../tsf/display_attribute.h"
 
@@ -196,6 +197,19 @@ bool test_candidate_window_ui() {
     wnd.update_content("今天|台積電", cands, 0, 0, 1);
     wnd.show_at(300, 300);
     EIME_ASSERT(wnd.is_visible(), "CandidateWindow 顯示狀態應為 true");
+    EIME_ASSERT(wnd.hit_test(30, 3) == 0 && wnd.hit_test(30, 33) == 1, "候選點擊須對應正確列");
+    EIME_ASSERT(wnd.hit_test(0, 3) == static_cast<size_t>(-1), "窗框不是候選");
+    std::vector<eime::WordCandidate> expanded(18, cands[0]);
+    wnd.update_content("", expanded, 0, 0, 1);
+    wnd.show_at(300, 300);
+    RECT window = {}; GetWindowRect(wnd.hwnd(), &window);
+    POINT click = {25 + (window.right - window.left - 26) / 2 + 8, 3};
+    EIME_ASSERT(wnd.hit_test(click.x, click.y) == 9, "第二欄首列須命中第十個候選");
+    size_t clicked = static_cast<size_t>(-1);
+    wnd.context_menu = [&](size_t index, POINT) { clicked = index; };
+    ClientToScreen(wnd.hwnd(), &click);
+    SendMessageW(wnd.hwnd(), WM_CONTEXTMENU, reinterpret_cast<WPARAM>(wnd.hwnd()), MAKELPARAM(click.x, click.y));
+    EIME_ASSERT(clicked == 9, "右鍵事件須攜帶實際點中的候選");
 
     // 處理一次訊息佇列確保 WM_PAINT 無異常執行
     MSG msg;
@@ -909,7 +923,99 @@ bool test_tail_phrase_ranking() {
     return true;
 }
 
-int main() {
+static bool private_test_root_available() {
+    wchar_t root[32768] = {};
+    return GetEnvironmentVariableW(L"EIME_PRIVATE_DATA_DIR", root, 32768) > 0;
+}
+static int preferences_writer(int index) {
+    if (!private_test_root_available() || index < 1 || index > 4) return 3;
+    eime::UserPreferencesStore store(eime::UserPreferencesStore::default_root() / "transaction-tests");
+    std::string word = "詞", reading = "ㄘˊ";
+    for (int i = 0; i < index; ++i) { word += "甲"; reading += " ㄐㄧㄚˇ"; }
+    return store.save_word(reading, word) ? 0 : 2;
+}
+bool test_private_preferences() {
+    EIME_ASSERT(private_test_root_available(), "請透過 CTest 執行，避免測試碰觸真實私人詞庫");
+    const auto root = eime::UserPreferencesStore::default_root() / "transaction-tests";
+    eime::UserPreferencesStore first(root), second(root);
+    const std::string reading = "ㄍㄨㄥ ㄕˋ", custom_reading = "ㄒㄧˋ ㄉㄨㄣˋ";
+    const std::vector<std::string> original = {"公式", "公事", "工事"};
+    EIME_ASSERT(first.reorder(reading, "工事", eime::RankAction::Top, original), "應可置頂同音詞");
+    EIME_ASSERT(second.save_word(custom_reading, "矽盾"), "另一實例應可造詞且保留順位");
+    EIME_ASSERT(first.reload() && first.data().words.size() == 1 && first.data().ranks.at(reading)[0] == "工事", "重載須合併兩實例操作");
+    EIME_ASSERT(second.reorder(reading, "工事", eime::RankAction::Down, original), "應能下移固定順位");
+    EIME_ASSERT(first.reload() && first.data().ranks.at(reading)[1] == "工事", "下移須移動一位");
+    EIME_ASSERT(first.reorder(reading, "工事", eime::RankAction::Up, original), "應能上移固定順位");
+    eime::ZhuyinTrie trie;
+    const auto syllables = eime::ZhuyinParser::parse_multi_syllables(reading);
+    trie.insert(syllables, "公式", 900000); trie.insert(syllables, "公事", 800000); trie.insert(syllables, "工事", 1);
+    trie.finalize_probabilities(); trie.set_user_preferences(first.data());
+    trie.apply_user_delta(syllables, "公式", 100);
+    EIME_ASSERT(trie.lookup_exact(syllables)[0].text == "工事" && trie.lookup_prefixes(syllables, 0, true)[0].text == "工事", "固定順位須優先於大量自動學習");
+    const auto custom = eime::ZhuyinParser::parse_multi_syllables(custom_reading);
+    eime::ViterbiDecoder decoder(trie);
+    EIME_ASSERT(decoder.decode(custom).full_sentence == "矽盾", "自造詞應參與整句解碼");
+    eime::InputStateMachine sm(trie, decoder);
+    std::string output;
+    for (char key : std::string("vu42jp4")) sm.process_key(key, output);
+    sm.process_special_key(eime::SpecialKey::DownArrow, output);
+    auto page = sm.current_page_candidates();
+    auto found = std::find_if(page.begin(), page.end(), [](const auto& candidate) { return candidate.text == "矽盾"; });
+    EIME_ASSERT(found != page.end(), "自造詞須出現在候選清單");
+    sm.process_key(static_cast<char>('1' + std::distance(page.begin(), found)), output);
+    EIME_ASSERT(sm.composition_text() == "矽盾", "應能選取私人造詞");
+    EIME_ASSERT(first.delete_word({custom_reading, "矽盾"}), "應能刪除私人詞");
+    trie.set_user_preferences(first.data());
+    EIME_ASSERT(trie.lookup_exact(custom).empty(), "已選過的私人詞刪除後不能從學習紀錄復活");
+    EIME_ASSERT(first.save_word(custom_reading, "矽盾") && first.save_word("ㄒㄧ ㄉㄨㄣˋ", "矽盾", {custom_reading, "矽盾"}), "應能更新私人詞讀音");
+    EIME_ASSERT(first.data().words.contains({"ㄒㄧ ㄉㄨㄣˋ", "矽盾"}) && !first.data().words.contains({custom_reading, "矽盾"}), "改讀音須移除舊讀音");
+    EIME_ASSERT(!first.save_word(reading, "字數不對") && !first.save_word("not zhuyin", "甲") && !first.save_word("ㄐㄧㄚˇ", "甲\t"), "不合規詞彙不得寫入");
+    HANDLE locked = CreateFileW((root / "preferences.tsv").c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
+    EIME_ASSERT(locked != INVALID_HANDLE_VALUE, "應能建立替換失敗測試");
+    bool blocked = first.save_word("ㄐㄧㄚˇ", "甲"); CloseHandle(locked);
+    EIME_ASSERT(!blocked && !first.data().words.contains({"ㄐㄧㄚˇ", "甲"}), "檔案被鎖定時不得假裝儲存成功");
+    EIME_ASSERT(first.reload() && first.data().words.size() == 1, "儲存失敗後原檔須完整保留");
+    EIME_ASSERT(first.reorder(reading, "", eime::RankAction::Reset, {}), "應可恢復自動排序");
+    trie.set_user_preferences(first.data());
+    EIME_ASSERT(trie.lookup_exact(syllables)[0].text == "公式", "重設後應按詞頻及既有學習排序");
+    wchar_t executable[32768] = {}; GetModuleFileNameW(nullptr, executable, 32768);
+    std::vector<HANDLE> children;
+    for (int i = 1; i <= 4; ++i) {
+        std::wstring command = L"\"" + std::wstring(executable) + L"\" --prefs-writer " + std::to_wstring(i);
+        STARTUPINFOW startup = {}; startup.cb = sizeof(startup);
+        PROCESS_INFORMATION process = {};
+        EIME_ASSERT(CreateProcessW(nullptr, command.data(), nullptr, nullptr, FALSE, CREATE_NO_WINDOW, nullptr, nullptr, &startup, &process), "應能啟動隔離寫入程序");
+        CloseHandle(process.hThread); children.push_back(process.hProcess);
+    }
+    EIME_ASSERT(WaitForMultipleObjects(static_cast<DWORD>(children.size()), children.data(), TRUE, 30000) == WAIT_OBJECT_0, "多程序寫入應完成");
+    bool successful = true;
+    for (HANDLE child : children) { DWORD code = 1; GetExitCodeProcess(child, &code); CloseHandle(child); successful = successful && code == 0; }
+    EIME_ASSERT(successful && second.reload() && second.data().words.size() == 5, "並行造詞不得互相覆寫");
+    bool changed = true;
+    EIME_ASSERT(second.reload(&changed) && !changed && second.data().words.size() == 5, "內容未變時應保留快取且不重新套用偏好");
+    const auto windows_text = eime::UserPreferencesStore::default_root() / "windows-text";
+    std::filesystem::create_directories(windows_text);
+    { std::ofstream file(windows_text / "preferences.tsv", std::ios::binary); file << "\xef\xbb\xbf" "EIME_USER_1\r\nW\tㄐㄧㄚˇ\t甲\r\n\r\n"; }
+    eime::UserPreferencesStore windows_store(windows_text);
+    EIME_ASSERT(windows_store.reload() && windows_store.data().words.contains({"ㄐㄧㄚˇ", "甲"}), "應能讀取 Windows UTF-8 BOM 與 CRLF");
+    const auto malformed = eime::UserPreferencesStore::default_root() / "malformed";
+    std::filesystem::create_directories(malformed);
+    { std::ofstream file(malformed / "preferences.tsv", std::ios::binary); file << "broken data\n"; }
+    eime::UserPreferencesStore broken(malformed);
+    EIME_ASSERT(!broken.reload() && !broken.save_word("ㄐㄧㄚˇ", "甲"), "損壞的私人詞庫不得被覆寫");
+    std::ifstream preserved(malformed / "preferences.tsv"); std::string line; std::getline(preserved, line);
+    EIME_ASSERT(line == "broken data", "須保留損壞原檔供修復");
+    const auto empty_root = eime::UserPreferencesStore::default_root() / "empty-file";
+    std::filesystem::create_directories(empty_root);
+    { std::ofstream file(empty_root / "preferences.tsv"); }
+    eime::UserPreferencesStore empty_store(empty_root);
+    EIME_ASSERT(!empty_store.reload(), "空檔案不能當成未變動的有效私人詞庫");
+    std::cout << "PASS: private vocabulary, fixed ranking, deletion, failed writes and multiprocess merge" << std::endl;
+    return true;
+}
+
+int main(int argc, char** argv) {
+    if (argc == 3 && std::string(argv[1]) == "--prefs-writer") return preferences_writer(std::atoi(argv[2]));
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
     SetConsoleCP(CP_UTF8);
@@ -929,6 +1035,7 @@ int main() {
     eime::ViterbiDecoder decoder(trie);
 
     bool ok = true;
+    ok = ok && test_private_preferences();
     ok = ok && test_append_phrase_stability();
     ok = ok && test_tail_phrase_ranking();
     ok = ok && test_zhuyin_parser();
@@ -948,7 +1055,7 @@ int main() {
     ok = ok && test_four_column_and_leader_comma(trie, decoder);
 
     if (ok) {
-        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 17 個核心測試模組通過。" << std::endl;
+        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 18 個核心測試模組通過。" << std::endl;
         return 0;
     } else {
         std::cerr << "\n[TEST FAILED] 部分測試未通過！" << std::endl;

@@ -2,6 +2,7 @@
 #include "guids.h"
 #include "display_attribute.h"
 #include <filesystem>
+#include "../ui/user_dictionary_dialog.h"
 
 namespace eime {
 
@@ -132,6 +133,62 @@ void EimeTextService::initialize_engine_resources() {
             state_machine_ = std::make_unique<InputStateMachine>(trie_, *decoder_, nullptr);
         }
     }
+    try {
+        user_preferences_ = std::make_shared<UserPreferencesStore>(UserPreferencesStore::default_root());
+        reload_user_preferences(true);
+    } catch (...) { EIME_TRACE(trace_.write("UserPreferences", 0, 0, 0, E_FAIL)); }
+}
+
+void EimeTextService::reload_user_preferences(bool force) {
+    if (!user_preferences_ || personal_ui_active_) return;
+    try {
+        bool changed = false;
+        if (!user_preferences_->reload(&changed)) return;
+        if (force || changed) {
+            trie_.set_user_preferences(user_preferences_->data());
+            if (state_machine_) state_machine_->refresh_user_preferences();
+        }
+    } catch (...) { EIME_TRACE(trace_.write("UserPreferences", 0, activation_generation_, 0, E_FAIL)); }
+}
+
+void EimeTextService::handle_candidate_menu(size_t index, POINT position) {
+    if (personal_ui_active_ || !user_preferences_) return;
+    AddRef();
+    auto hold = std::unique_ptr<EimeTextService, void(*)(EimeTextService*)>(this, [](EimeTextService* service) { service->Release(); });
+    const auto word = index < menu_candidates_.size() ? menu_candidates_[index] : WordReading{};
+    const auto draft = menu_composition_;
+    const auto generation = menu_generation_;
+    ITfContext* context = edit_context_;
+    if (context) context->AddRef();
+    auto context_hold = std::unique_ptr<ITfContext, void(*)(ITfContext*)>(context, [](ITfContext* value) { if (value) value->Release(); });
+    try {
+        personal_ui_active_ = true;
+        const auto command = candidate_window_.choose_menu(valid_user_word(word.reading, word.text), position);
+        if (command == CandidateCommand::CreateWord || command == CandidateCommand::Manage) {
+            show_user_dictionary_dialog(g_hInst, candidate_window_.hwnd(), user_preferences_, draft,
+                command == CandidateCommand::CreateWord ? word : WordReading{});
+        } else if (command != CandidateCommand::None) {
+            std::vector<std::string> group;
+            for (const auto& candidate : trie_.lookup_exact(ZhuyinParser::parse_multi_syllables(word.reading))) group.push_back(candidate.text);
+            const auto action = command == CandidateCommand::Top ? RankAction::Top : command == CandidateCommand::Up ? RankAction::Up :
+                command == CandidateCommand::Down ? RankAction::Down : RankAction::Reset;
+            if (!user_preferences_->reorder(word.reading, word.text, action, group))
+                MessageBoxW(candidate_window_.hwnd(), user_preferences_->error().c_str(), L"E-IME", MB_OK | MB_ICONWARNING);
+        }
+        personal_ui_active_ = false;
+        if (command != CandidateCommand::None) {
+            reload_user_preferences(true);
+            if (state_machine_ && command != CandidateCommand::CreateWord && command != CandidateCommand::Manage)
+                state_machine_->focus_candidate(word);
+        }
+        // A menu/dialog can pump messages and change TSF focus. Never write a
+        // captured snapshot into a different context or a later activation.
+        if (command != CandidateCommand::None && thread_mgr_ && context && context == edit_context_ && generation == activation_generation_)
+            queue_edit(context, "");
+    } catch (...) {
+        personal_ui_active_ = false;
+        EIME_TRACE(trace_.write("UserPreferences", 0, activation_generation_, 0, E_FAIL));
+    }
 }
 
 STDMETHODIMP EimeTextService::QueryInterface(REFIID riid, void** ppvObj) {
@@ -180,6 +237,7 @@ STDMETHODIMP EimeTextService::Activate(ITfThreadMgr* ptim, TfClientId tid) {
     }
 
     candidate_window_.create(g_hInst);
+    candidate_window_.context_menu = [this](size_t index, POINT position) { handle_candidate_menu(index, position); };
     if (journal_) {
         journal_->sync_all_devices(trie_);
     }
@@ -467,6 +525,8 @@ HRESULT EimeTextService::queue_edit(ITfContext* context, const std::string& comm
     snapshot.page = state_machine_->candidate_page();
     snapshot.pages = state_machine_->total_candidate_pages();
     snapshot.simplified = state_machine_->charset() == OutputCharset::Simplified;
+    for (size_t i = 0; i < snapshot.candidates.size(); ++i) snapshot.menu_candidates.push_back(state_machine_->candidate_word(i));
+    snapshot.composition_words = state_machine_->composition_words();
     EIME_TRACE(trace_.write("Enqueue", snapshot.trace_id, activation_generation_, pending_edits_.size() + 1));
     pending_edits_.push_back(std::move(snapshot));
     if (edit_requested_ || draining_edits_) return S_OK;
@@ -511,6 +571,8 @@ void EimeTextService::drain_edit_sessions(TfEditCookie ec, ITfContext* context, 
 STDMETHODIMP EimeTextService::OnTestKeyDown(ITfContext* pic, WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
     (void)pic; (void)lParam;
     if (!pfEaten) return E_INVALIDARG;
+    if (state_machine_ && state_machine_->mode() == InputMode::Chinese &&
+        (state_machine_->state() == EngineState::Idle || wParam == VK_DOWN)) reload_user_preferences();
     observe_ctrl_key(wParam, lParam, true);
     observe_shift_key(wParam, lParam, true);
     const auto input = capture_key(wParam, lParam);
@@ -559,6 +621,8 @@ STDMETHODIMP EimeTextService::OnKeyDown(ITfContext* pic, WPARAM wParam, LPARAM l
     // Use the modifier/text snapshot accepted by OnTestKeyDown, even if the host
     // has advanced its keyboard state before delivering OnKeyDown.
     const bool tested = tested_key_ && tested_key_->vk == wParam;
+    if (!tested && state_machine_ && state_machine_->mode() == InputMode::Chinese &&
+        (state_machine_->state() == EngineState::Idle || wParam == VK_DOWN)) reload_user_preferences();
     const auto input = tested
         ? *tested_key_ : capture_key(wParam, lParam);
     tested_key_.reset();
@@ -957,6 +1021,9 @@ POINT EimeTextService::get_fallback_caret_position() const {
 }
 
 void EimeTextService::update_ui(const POINT& caret_pt, const EditSnapshot& snapshot) {
+    menu_candidates_ = snapshot.menu_candidates;
+    menu_composition_ = snapshot.composition_words;
+    menu_generation_ = activation_generation_;
     if (!snapshot.candidates_open) {
         candidate_window_.hide();
         return;
