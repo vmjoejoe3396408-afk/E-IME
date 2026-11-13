@@ -38,7 +38,8 @@ public:
     // 支援無鎖定或含局部鎖定 (Pinned Overrides) 的全局最佳語句解碼
     ViterbiResult decode(
         const std::vector<Syllable>& syllables,
-        const std::vector<PinnedSegment>& pins = {}
+        const std::vector<PinnedSegment>& pins = {},
+        const std::vector<SegmentedWord>& previous_words = {}
     ) const {
         if (syllables.empty()) return {};
 
@@ -124,7 +125,25 @@ public:
                     transition_score = compute_transition_score(backpointer[i].word.text, w.text);
                 }
 
-                double score = dp[i] + w.log_prob + length_bonus + transition_score;
+                // Appending should not casually dismantle an existing phrase.
+                // This is a soft cost, not a pin: a substantially better path
+                // can still win. Charge once, on the edge covering its start.
+                double rewrite_cost = 0.0;
+                for (const auto& previous : previous_words) {
+                    const size_t start = previous.start_syllable_idx;
+                    if (previous.is_pinned || previous.length < 2 || i > start || j <= start) continue;
+                    bool retained = false;
+                    if (j >= start + previous.length) {
+                        const auto chars = split_utf8_chars(w.text);
+                        if (chars.size() == w.syllable_length) {
+                            std::string covered;
+                            for (size_t k = start - i; k < start - i + previous.length; ++k) covered += chars[k];
+                            retained = covered == previous.text;
+                        }
+                    }
+                    if (!retained) rewrite_cost += 2.0;
+                }
+                double score = dp[i] + w.log_prob + length_bonus + transition_score - rewrite_cost;
                 if (score > dp[j]) {
                     dp[j] = score;
                     backpointer[j] = {i, w, false, true};

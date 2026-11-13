@@ -636,6 +636,7 @@ public:
     }
 
     void reset() {
+        appended_syllable_ = false;
         state_ = EngineState::Idle;
         committed_syllables_.clear();
         literal_texts_.clear();
@@ -680,8 +681,10 @@ private:
     size_t selected_in_page_;
     bool is_expanded_ = false;
     bool leader_punct_ = false;
+    bool appended_syllable_ = false;
 
     void insert_completed_syllable(const Syllable& s) {
+        appended_syllable_ = cursor_idx_ == committed_syllables_.size();
         // 若在鎖定區段內部插入音節/符號，移除該鎖定避免索引錯亂
         pins_.erase(
             std::remove_if(pins_.begin(), pins_.end(), [&](const PinnedSegment& p) {
@@ -704,6 +707,9 @@ private:
     }
 
     void update_viterbi() {
+        const bool extending = appended_syllable_ && cursor_idx_ == committed_syllables_.size() &&
+            last_viterbi_.per_syllable_chars.size() + 1 == committed_syllables_.size();
+        appended_syllable_ = false;
         if (committed_syllables_.empty()) {
             preview_text_.clear();
             last_viterbi_ = ViterbiResult{};
@@ -713,7 +719,9 @@ private:
         for (size_t i = 0; i < literal_texts_.size(); ++i) {
             if (!literal_texts_[i].empty()) all_pins.push_back({i, 1, literal_texts_[i]});
         }
-        last_viterbi_ = decoder_.decode(committed_syllables_, all_pins);
+        last_viterbi_ = extending
+            ? decoder_.decode(committed_syllables_, all_pins, last_viterbi_.words)
+            : decoder_.decode(committed_syllables_, all_pins);
         preview_text_ = last_viterbi_.full_sentence;
     }
 
@@ -752,22 +760,24 @@ private:
         candidates_ = trie_.lookup_prefixes(committed_syllables_, candidate_target_idx_, true);
         candidate_starts_.assign(candidates_.size(), candidate_target_idx_);
 
-        // 若游標在句尾且句長 > 1，同時把涵蓋到句尾的多字詞也納入前排候選
+        // Include phrases ending here, even when the whole sentence is not a
+        // dictionary entry. Preserve longest-first and descending frequency.
         if (cursor_idx_ == committed_syllables_.size() && committed_syllables_.size() > 1) {
             size_t segment_start = candidate_target_idx_;
             while (segment_start > 0 && literal_texts_[segment_start - 1].empty()) --segment_start;
-            std::vector<Syllable> segment(committed_syllables_.begin() + static_cast<std::ptrdiff_t>(segment_start), committed_syllables_.end());
-            auto full_cands = trie_.lookup_exact(segment);
-            for (const auto& fc : full_cands) {
-                bool exists = false;
-                for (const auto& c : candidates_) {
-                    if (c.text == fc.text) { exists = true; break; }
-                }
-                if (!exists) {
-                    candidates_.insert(candidates_.begin(), fc);
-                    candidate_starts_.insert(candidate_starts_.begin(), segment_start);
+            std::vector<WordCandidate> phrases;
+            std::vector<size_t> starts;
+            for (size_t start = segment_start; start < candidate_target_idx_; ++start) {
+                std::vector<Syllable> segment(committed_syllables_.begin() + static_cast<std::ptrdiff_t>(start), committed_syllables_.end());
+                for (const auto& candidate : trie_.lookup_exact(segment)) {
+                    if (std::none_of(phrases.begin(), phrases.end(), [&](const WordCandidate& c) { return c.text == candidate.text; })) {
+                        phrases.push_back(candidate);
+                        starts.push_back(start);
+                    }
                 }
             }
+            candidates_.insert(candidates_.begin(), phrases.begin(), phrases.end());
+            candidate_starts_.insert(candidate_starts_.begin(), starts.begin(), starts.end());
         }
 
         if (!candidates_.empty()) {

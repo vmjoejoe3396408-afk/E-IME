@@ -835,6 +835,74 @@ bool test_four_column_and_leader_comma(eime::ZhuyinTrie& trie, const eime::Viter
     return true;
 }
 
+bool test_append_phrase_stability() {
+    eime::ZhuyinTrie trie;
+    auto add = [&](const char* word, const char* reading, uint32_t frequency) {
+        trie.insert(eime::ZhuyinParser::parse_multi_syllables(reading), word, frequency);
+    };
+    add("你", "ㄋㄧˇ", 100); add("妳", "ㄋㄧˇ", 300);
+    add("好", "ㄏㄠˇ", 1); add("嗎", "ㄇㄚ˙", 100);
+    add("你好", "ㄋㄧˇ ㄏㄠˇ", 1000); add("好嗎", "ㄏㄠˇ ㄇㄚ˙", 1000);
+    trie.finalize_probabilities();
+    eime::ViterbiDecoder decoder(trie);
+    const auto pair = eime::ZhuyinParser::parse_multi_syllables("ㄋㄧˇ ㄏㄠˇ");
+    const auto sentence = eime::ZhuyinParser::parse_multi_syllables("ㄋㄧˇ ㄏㄠˇ ㄇㄚ˙");
+    const auto previous = decoder.decode(pair);
+    EIME_ASSERT(previous.full_sentence == "你好", "初始詞應為你好");
+    EIME_ASSERT(decoder.decode(sentence).full_sentence == "妳好嗎", "基準路徑應重拆先前詞");
+    EIME_ASSERT(decoder.decode(sentence, {}, previous.words).full_sentence == "你好嗎", "輕微分數優勢不應拆掉既有詞");
+    eime::InputStateMachine sm(trie, decoder);
+    std::string out;
+    for (char c : std::string("su3cl3")) sm.process_key(c, out);
+    EIME_ASSERT(sm.composition_text() == "你好", "狀態機先組出既有詞");
+    for (char c : std::string("a87")) sm.process_key(c, out);
+    EIME_ASSERT(sm.composition_text() == "你好嗎", "尾端追加須啟用成詞保留");
+    sm.process_special_key(eime::SpecialKey::Home, out);
+    sm.process_special_key(eime::SpecialKey::DeleteKey, out);
+    for (char c : std::string("su3")) sm.process_key(c, out);
+    EIME_ASSERT(sm.composition_text() == "妳好嗎", "回頭編輯須重新計算，不套用尾端保留");
+    sm.reset();
+    for (char c : std::string("su3cl3a87")) sm.process_key(c, out);
+    sm.process_special_key(eime::SpecialKey::Home, out);
+    sm.process_special_key(eime::SpecialKey::DownArrow, out);
+    const auto page = sm.current_page_candidates();
+    const auto chosen = std::find_if(page.begin(), page.end(), [](const auto& c) { return c.text == "妳"; });
+    EIME_ASSERT(chosen != page.end(), "仍須能手動改選單字");
+    sm.process_key(static_cast<char>('1' + std::distance(page.begin(), chosen)), out);
+    EIME_ASSERT(sm.composition_text() == "妳好嗎", "自動保留不能阻擋手動選字");
+    trie.apply_user_delta(eime::ZhuyinParser::parse_multi_syllables("ㄋㄧˇ"), "妳", 1);
+    EIME_ASSERT(decoder.decode(sentence, {}, previous.words).full_sentence == "妳好嗎", "明顯更佳的解讀仍能推翻軟保留");
+    EIME_ASSERT(decoder.decode(sentence, {{0, 2, "你好"}}, previous.words).full_sentence == "你好嗎", "手動鎖定必須優先");
+    std::cout << "PASS: append stability, manual override and stronger alternative" << std::endl;
+    return true;
+}
+
+bool test_tail_phrase_ranking() {
+    for (const auto& prefix : {std::string{}, std::string("ji3")}) {
+        eime::ZhuyinTrie trie;
+        const auto reading = eime::ZhuyinParser::parse_multi_syllables("ㄍㄨㄥ ㄕˋ");
+        trie.insert(reading, "公式", 1000);
+        trie.insert(reading, "公事", 900);
+        trie.insert(reading, "工事", 100);
+        trie.insert(eime::ZhuyinParser::parse_multi_syllables("ㄨㄛˇ"), "我", 1000);
+        trie.insert(eime::ZhuyinParser::parse_multi_syllables("ㄕˋ"), "事", 1000);
+        trie.finalize_probabilities();
+        eime::ViterbiDecoder decoder(trie);
+        eime::InputStateMachine sm(trie, decoder);
+        std::string out;
+        for (char c : prefix + "ej/ g4") sm.process_key(c, out);
+        sm.process_special_key(eime::SpecialKey::DownArrow, out);
+        const auto page = sm.current_page_candidates();
+        EIME_ASSERT(page.size() >= 4, "句尾應同時提供整詞與單字，即使整句不在詞庫");
+        EIME_ASSERT(page[0].text == "公式" && page[1].text == "公事" && page[2].text == "工事",
+            "同音詞候選不得倒序，實際為: " + page[0].text + "," + page[1].text + "," + page[2].text);
+        sm.process_key('2', out);
+        EIME_ASSERT(sm.composition_text() == (prefix.empty() ? "公事" : "我公事"), "句尾選詞須替換正確範圍，不影響前文");
+    }
+    std::cout << "PASS: tail phrase ranking and replacement range" << std::endl;
+    return true;
+}
+
 int main() {
 #ifdef _WIN32
     SetConsoleOutputCP(CP_UTF8);
@@ -855,6 +923,8 @@ int main() {
     eime::ViterbiDecoder decoder(trie);
 
     bool ok = true;
+    ok = ok && test_append_phrase_stability();
+    ok = ok && test_tail_phrase_ranking();
     ok = ok && test_zhuyin_parser();
     ok = ok && test_mid_sentence_cursor_edit(trie, decoder);
     ok = ok && test_multi_device_cloud_sync();
@@ -872,7 +942,7 @@ int main() {
     ok = ok && test_four_column_and_leader_comma(trie, decoder);
 
     if (ok) {
-        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 15 個核心測試模組通過。" << std::endl;
+        std::cout << "\n[ALL TESTS PASSED] E-IME 全數 17 個核心測試模組通過。" << std::endl;
         return 0;
     } else {
         std::cerr << "\n[TEST FAILED] 部分測試未通過！" << std::endl;

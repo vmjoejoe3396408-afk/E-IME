@@ -146,7 +146,7 @@ public:
                 if (a.syllable_length != b.syllable_length) {
                     return a.syllable_length > b.syllable_length;
                 }
-                return a.effective_frequency() > b.effective_frequency();
+                return a < b;
             });
         } else {
             std::sort(results.begin(), results.end());
