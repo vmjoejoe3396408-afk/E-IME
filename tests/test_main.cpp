@@ -868,6 +868,12 @@ bool test_append_phrase_stability() {
     const auto page = sm.current_page_candidates();
     const auto chosen = std::find_if(page.begin(), page.end(), [](const auto& c) { return c.text == "妳"; });
     EIME_ASSERT(chosen != page.end(), "仍須能手動改選單字");
+    const auto cursor = sm.cursor_idx();
+    sm.toggle_mode(out);
+    EIME_ASSERT(sm.mode() == eime::InputMode::Chinese && sm.state() == eime::EngineState::CandidateOpen,
+        "候選開啟時單按 Shift 不得切換英文或關閉候選");
+    EIME_ASSERT(sm.cursor_idx() == cursor && sm.current_page_candidates().size() == page.size() && out.empty(),
+        "Shift 應保留候選與游標且不提交文字");
     sm.process_key(static_cast<char>('1' + std::distance(page.begin(), chosen)), out);
     EIME_ASSERT(sm.composition_text() == "妳好嗎", "自動保留不能阻擋手動選字");
     trie.apply_user_delta(eime::ZhuyinParser::parse_multi_syllables("ㄋㄧˇ"), "妳", 1);

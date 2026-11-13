@@ -151,6 +151,9 @@ public:
     // 切換中/英模式 (對應單擊 Shift)
     void toggle_mode(std::string& out_commit_text) {
         out_commit_text.clear();
+        // Selecting a Chinese candidate takes precedence over a stray Shift.
+        // Keep the page/highlight intact so the next digit/Enter still selects.
+        if (state_ == EngineState::CandidateOpen) return;
         // A mode change keeps resolved text/literals and discards only pending phonetics.
         current_syllable_ = Syllable{};
         component_order_.clear();

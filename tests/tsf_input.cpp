@@ -109,6 +109,7 @@ int wmain(int argc, wchar_t** argv) {
         const auto length = context->range()->current_text().size() - prefix.size();
         for (int i = 0; i < 3; ++i) {
             CHECK(SUCCEEDED(key(sink, context, VK_DOWN)));
+            CHECK(SUCCEEDED(shift_toggle(sink, context)));
             CHECK(SUCCEEDED(key(sink, context, '1')));
             CHECK(context->composition() == composition && !composition->is_ended());
             CHECK(context->property()->end - context->property()->start == static_cast<LONG>(length));
@@ -118,6 +119,20 @@ int wmain(int argc, wchar_t** argv) {
         CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
         CHECK(composition->is_ended());
         CHECK(context->range()->current_text() == before_commit);
+    }
+
+    // Candidate-window Shift cannot switch modes or discard Enter selection.
+    {
+        const auto prefix = context->range()->current_text();
+        CHECK(SUCCEEDED(type(sink, context, "su3")));
+        CHECK(SUCCEEDED(key(sink, context, VK_DOWN)));
+        CHECK(SUCCEEDED(shift_toggle(sink, context)));
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
+        CHECK(context->composition() && !context->composition()->is_ended());
+        CHECK(context->range()->current_text().size() == prefix.size() + 1);
+        CHECK(SUCCEEDED(type(sink, context, "cl3")));
+        CHECK(context->range()->current_text().ends_with(L"好"));
+        CHECK(SUCCEEDED(key(sink, context, VK_RETURN)));
     }
 
     // Mid-sentence comma insertion: dotted underline covers whole composition, caret after comma
